@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: job-platform
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/jobplatform}
+    username: ${DB_USER:jobplatform}
+    password: ${DB_PASSWORD:jobplatform}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+
+temporal:
+  service-target: ${TEMPORAL_SERVICE_TARGET:127.0.0.1:7233}
+  namespace: ${TEMPORAL_NAMESPACE:default}
+  task-queue: ${TEMPORAL_TASK_QUEUE:job-platform-task-queue}
+
+server:
+  port: 8080
