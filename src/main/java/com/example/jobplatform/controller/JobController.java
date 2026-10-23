@@ -32,6 +32,11 @@ public class JobController {
         return jobService.register(request);
     }
 
+    @PostMapping("/{id}/schedule")
+    public JobResponse schedule(@PathVariable UUID id) {
+        return jobService.schedule(id);
+    }
+
     @GetMapping
     public List<JobResponse> findAll() {
         return jobService.findAll();

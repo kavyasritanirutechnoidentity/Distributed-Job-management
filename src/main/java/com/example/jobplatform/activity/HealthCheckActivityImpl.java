@@ -1,6 +1,8 @@
 package com.example.jobplatform.activity;
 
 import io.temporal.failure.ApplicationFailure;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -12,6 +14,8 @@ import java.time.Duration;
 
 @Component
 public class HealthCheckActivityImpl implements HealthCheckActivity {
+
+    private static final Logger log = LoggerFactory.getLogger(HealthCheckActivityImpl.class);
 
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
 
@@ -29,8 +33,10 @@ public class HealthCheckActivityImpl implements HealthCheckActivity {
         try {
             HttpResponse<Void> response = httpClient.send(request, HttpResponse.BodyHandlers.discarding());
             int status = response.statusCode();
+            log.info("Health check {} -> HTTP {}", targetUrl, status);
             return new HealthCheckResult(status, status < 400, "HTTP " + status);
         } catch (IOException e) {
+            log.warn("Health check {} unreachable: {}", targetUrl, e.getMessage());
             throw ApplicationFailure.newFailure("target unreachable: " + e.getMessage(), "TargetUnreachable");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
