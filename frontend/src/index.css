@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 224 60% 5%;
+    --foreground: 213 45% 96%;
+    --card: 224 50% 8%;
+    --card-foreground: 213 45% 96%;
+    --muted: 222 40% 15%;
+    --muted-foreground: 217 25% 62%;
+    --primary: 211 100% 62%;
+    --primary-foreground: 224 60% 5%;
+    --border: 222 35% 20%;
+    --input: 222 35% 20%;
+    --ring: 211 100% 62%;
+    --success: 160 84% 45%;
+    --warning: 38 95% 55%;
+    --destructive: 0 80% 58%;
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background-image:
+      radial-gradient(60rem 40rem at 85% -10%, hsl(217 100% 45% / 0.14), transparent 60%),
+      radial-gradient(50rem 35rem at -10% 110%, hsl(200 100% 45% / 0.1), transparent 60%),
+      radial-gradient(40rem 30rem at 50% 50%, hsl(230 80% 40% / 0.06), transparent 70%);
+    background-attachment: fixed;
+  }
+}
+
+@layer components {
+  .glass {
+    @apply rounded-2xl border backdrop-blur-xl;
+    background:
+      linear-gradient(145deg, hsl(217 60% 18% / 0.55), hsl(224 55% 9% / 0.65));
+    border-color: hsl(217 80% 60% / 0.14);
+    box-shadow:
+      0 8px 32px hsl(224 80% 3% / 0.5),
+      inset 0 1px 0 hsl(210 100% 90% / 0.06);
+  }
+
+  .glow-text {
+    background: linear-gradient(180deg, hsl(0 0% 100%), hsl(213 60% 75%));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .icon-chip {
+    @apply flex h-9 w-9 items-center justify-center rounded-xl;
+    background: linear-gradient(145deg, hsl(211 100% 62% / 0.25), hsl(211 100% 40% / 0.1));
+    box-shadow:
+      0 0 20px hsl(211 100% 55% / 0.25),
+      inset 0 1px 0 hsl(210 100% 85% / 0.15);
+  }
+}
