@@ -25,6 +25,10 @@
     @apply border-border;
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
     background-image:
@@ -32,6 +36,26 @@
       radial-gradient(50rem 35rem at -10% 110%, hsl(200 100% 45% / 0.1), transparent 60%),
       radial-gradient(40rem 30rem at 50% 50%, hsl(230 80% 40% / 0.06), transparent 70%);
     background-attachment: fixed;
+  }
+
+  ::selection {
+    background: hsl(211 100% 62% / 0.3);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(217 40% 25%);
+    border-radius: 8px;
+    border: 2px solid hsl(224 60% 5%);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(217 45% 32%);
   }
 }
 
@@ -59,5 +83,81 @@
     box-shadow:
       0 0 20px hsl(211 100% 55% / 0.25),
       inset 0 1px 0 hsl(210 100% 85% / 0.15);
+  }
+
+  /* Subtle 2D lift on interactive surfaces */
+  .lift {
+    transition:
+      transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 0.25s ease;
+  }
+  .lift:hover {
+    transform: translateY(-2px);
+    border-color: hsl(217 80% 60% / 0.3);
+    box-shadow:
+      0 12px 40px hsl(224 80% 3% / 0.6),
+      0 0 24px hsl(211 100% 55% / 0.08),
+      inset 0 1px 0 hsl(210 100% 90% / 0.08);
+  }
+
+  /* Shimmering skeleton */
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(210 100% 80% / 0.06),
+      transparent
+    );
+    animation: shimmer 1.8s infinite;
+  }
+  @keyframes shimmer {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  @keyframes fadeSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Pulsing status dot */
+  .pulse-dot {
+    position: relative;
+  }
+  .pulse-dot::before {
+    content: "";
+    position: absolute;
+    inset: -3px;
+    border-radius: 9999px;
+    background: currentColor;
+    opacity: 0.35;
+    animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+  @keyframes pulse-ring {
+    0%,
+    100% {
+      transform: scale(1);
+      opacity: 0.35;
+    }
+    50% {
+      transform: scale(1.8);
+      opacity: 0;
+    }
   }
 }

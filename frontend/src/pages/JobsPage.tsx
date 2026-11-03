@@ -185,13 +185,16 @@ export function JobsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {pageRows.map((job: Job) => (
+                {pageRows.map((job: Job, i: number) => (
                   <tr
                     key={job.id}
-                    className="cursor-pointer transition-colors hover:bg-[hsl(217_80%_60%/0.06)]"
+                    className="group cursor-pointer transition-all duration-200 hover:bg-[hsl(217_80%_60%/0.06)]"
+                    style={{ animation: `fadeSlideIn 0.3s ease ${i * 0.03}s both` }}
                     onClick={() => navigate(`/jobs/${job.id}`)}
                   >
-                    <td className="max-w-48 truncate px-4 py-3 font-medium">{job.name}</td>
+                    <td className="max-w-48 truncate px-4 py-3 font-medium transition-colors duration-200 group-hover:text-primary">
+                      {job.name}
+                    </td>
                     <td className="px-4 py-3">
                       <Badge variant="info">{job.jobType.replace("_", " ")}</Badge>
                     </td>

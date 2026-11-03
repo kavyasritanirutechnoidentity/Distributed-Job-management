@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { motion } from "framer-motion";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Copy, Info, RefreshCw } from "lucide-react";
 import { useJob, useScheduleJob } from "@/hooks/useJobs";
@@ -65,7 +66,12 @@ export function JobDetailPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <motion.div
+      className="space-y-6"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+    >
       <Link
         to="/jobs"
         className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
@@ -189,6 +195,6 @@ export function JobDetailPage() {
         onCancel={() => setConfirmOpen(false)}
         onConfirm={() => schedule.mutate(undefined, { onSettled: () => setConfirmOpen(false) })}
       />
-    </div>
+    </motion.div>
   );
 }

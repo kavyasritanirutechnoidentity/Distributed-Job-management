@@ -33,14 +33,17 @@ export function Layout() {
               end={end}
               className={({ isActive }) =>
                 cn(
-                  "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-all",
+                  "group flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm transition-all duration-200",
                   isActive
                     ? "bg-gradient-to-r from-[hsl(211_100%_62%/0.2)] to-transparent font-medium text-foreground shadow-[inset_2px_0_0_hsl(211_100%_62%),inset_0_1px_0_hsl(0_0%_100%/0.05)]"
-                    : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                    : "text-muted-foreground hover:translate-x-0.5 hover:bg-muted/40 hover:text-foreground",
                 )
               }
             >
-              <Icon className="h-4 w-4" aria-hidden />
+              <Icon
+                className="h-4 w-4 transition-transform duration-200 group-hover:scale-110"
+                aria-hidden
+              />
               {label}
             </NavLink>
           ))}

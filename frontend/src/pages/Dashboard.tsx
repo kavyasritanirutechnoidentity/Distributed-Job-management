@@ -56,7 +56,7 @@ function StatCard({
 }) {
   const s = TONE_STYLES[tone];
   return (
-    <Card>
+    <Card className="lift">
       <CardContent className="flex items-center justify-between p-5">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -76,7 +76,7 @@ function StatCard({
 
 function FailureRow({ job }: { job: Job }) {
   return (
-    <li className="flex items-center justify-between gap-4 py-3">
+    <li className="group flex items-center justify-between gap-4 rounded-lg px-2 py-3 transition-colors duration-200 hover:bg-[hsl(217_80%_60%/0.05)]">
       <div className="min-w-0">
         <Link
           to={`/jobs/${job.id}`}
@@ -169,10 +169,21 @@ export function Dashboard() {
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Total jobs" value={total} icon={ListChecks} />
-            <StatCard label="Scheduled" value={scheduled} icon={CheckCircle2} tone="success" />
-            <StatCard label="Pending" value={pending} icon={Clock} tone="warning" />
-            <StatCard label="Failed" value={failed} icon={XCircle} tone="destructive" />
+            {[
+              { label: "Total jobs", value: total, icon: ListChecks, tone: "neutral" as const },
+              { label: "Scheduled", value: scheduled, icon: CheckCircle2, tone: "success" as const },
+              { label: "Pending", value: pending, icon: Clock, tone: "warning" as const },
+              { label: "Failed", value: failed, icon: XCircle, tone: "destructive" as const },
+            ].map((s, i) => (
+              <motion.div
+                key={s.label}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: i * 0.06 }}
+              >
+                <StatCard label={s.label} value={s.value} icon={s.icon} tone={s.tone} />
+              </motion.div>
+            ))}
           </div>
 
           <div className="grid gap-6 lg:grid-cols-5">
@@ -259,7 +270,10 @@ export function Dashboard() {
             <CardContent>
               <ul className="divide-y divide-border">
                 {recent.map((j) => (
-                  <li key={j.id} className="flex items-center justify-between gap-4 py-3">
+                  <li
+                    key={j.id}
+                    className="group flex items-center justify-between gap-4 rounded-lg px-2 py-3 transition-colors duration-200 hover:bg-[hsl(217_80%_60%/0.05)]"
+                  >
                     <div className="flex min-w-0 items-center gap-3">
                       <StatusBadge status={j.scheduleStatus} />
                       <Link

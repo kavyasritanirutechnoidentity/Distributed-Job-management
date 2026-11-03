@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { motion } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -74,7 +75,12 @@ export function RegisterJobPage() {
   if (created) {
     return (
       <div className="mx-auto max-w-xl space-y-6">
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-success/30 bg-success/5 p-10 text-center">
+        <motion.div
+          className="flex flex-col items-center gap-3 rounded-2xl border border-success/30 bg-success/5 p-10 text-center shadow-[0_0_40px_hsl(160_84%_45%/0.1)]"
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+        >
           <CheckCircle2 className="h-10 w-10 text-success" aria-hidden />
           <h1 className="text-xl font-semibold">Job registered</h1>
           <p className="text-sm text-muted-foreground">
@@ -98,7 +104,7 @@ export function RegisterJobPage() {
               All jobs
             </Link>
           </div>
-        </div>
+        </motion.div>
       </div>
     );
   }
