@@ -73,6 +73,12 @@ public class GlobalExceptionHandler {
                 .body(Map.of("error", ex.getReason() == null ? "Request failed" : ex.getReason()));
     }
 
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ResponseEntity<Map<String, String>> handleUnknownPath() {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Not found"));
+    }
+
     @ExceptionHandler(JobNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(JobNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)

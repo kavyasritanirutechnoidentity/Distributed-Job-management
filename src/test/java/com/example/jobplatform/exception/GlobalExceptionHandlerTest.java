@@ -27,4 +27,12 @@ class GlobalExceptionHandlerTest {
         assertEquals(400, response.getStatusCode().value());
         assertEquals("Missing required parameter: size", response.getBody().get("error"));
     }
+
+    @Test
+    void unknownPathReturns404() {
+        var response = handler.handleUnknownPath();
+
+        assertEquals(404, response.getStatusCode().value());
+        assertEquals("Not found", response.getBody().get("error"));
+    }
 }
