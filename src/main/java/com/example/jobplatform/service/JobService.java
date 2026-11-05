@@ -73,7 +73,7 @@ public class JobService {
         validateTargetUrl(normalized.targetUrl());
         String payload = serialize(normalized);
 
-        registrationTransaction.executeWithoutResult(status -> {
+        UUID jobId = registrationTransaction.execute(status -> {
             registrationRepository.reserve(key, payload);
             JobRegistration registration = registrationRepository.findByKeyForUpdate(key).orElseThrow();
             if (!registration.getRequestPayload().equals(payload)) {
@@ -85,17 +85,25 @@ public class JobService {
                 registration.setJobId(job.getId());
                 registrationRepository.save(registration);
             }
+            return registration.getJobId();
         });
+
+        // A stored response short-circuits before any Temporal work.
+        JobResponse replay = registrationTransaction.execute(status -> {
+            JobRegistration registration = registrationRepository.findByKeyForUpdate(key).orElseThrow();
+            return registration.getResponsePayload() != null
+                    ? deserializeResponse(registration.getResponsePayload()) : null;
+        });
+        if (replay != null) {
+            return replay;
+        }
+
+        syncSchedule(jobId);
 
         return registrationTransaction.execute(status -> {
             JobRegistration registration = registrationRepository.findByKeyForUpdate(key).orElseThrow();
-            if (registration.getResponsePayload() != null) {
-                return deserializeResponse(registration.getResponsePayload());
-            }
-            UUID jobId = registration.getJobId();
-            Job job = jobRepository.findByIdForUpdate(jobId).orElseThrow(() -> new JobNotFoundException(jobId));
-            job = trySchedule(job);
-            jobRepository.flush();
+            Job job = jobRepository.findById(registration.getJobId())
+                    .orElseThrow(() -> new JobNotFoundException(registration.getJobId()));
             JobResponse response = JobResponse.from(job);
             registration.setResponsePayload(serialize(response));
             registrationRepository.save(registration);
@@ -152,17 +160,12 @@ public class JobService {
     }
 
     public JobResponse schedule(UUID id) {
-        return registrationTransaction.execute(status -> {
-            Job job = jobRepository.findByIdForUpdate(id).orElseThrow(() -> new JobNotFoundException(id));
-            job = trySchedule(job);
-            jobRepository.flush();
-            return JobResponse.from(job);
-        });
+        return syncSchedule(id);
     }
 
     public JobResponse update(UUID id, JobRegistrationRequest request) {
         validateTargetUrl(request.targetUrl());
-        return registrationTransaction.execute(status -> {
+        JobResponse committed = registrationTransaction.execute(status -> {
             Job job = jobRepository.findByIdForUpdate(id).orElseThrow(() -> new JobNotFoundException(id));
             jobRepository.lockRegistration(request.name(), request.targetUrl());
             if (jobRepository.existsByNameAndTargetUrlAndIdNot(request.name(), request.targetUrl(), id)) {
@@ -174,29 +177,27 @@ public class JobService {
             job.setTargetUrl(request.targetUrl());
             job.setIntervalSeconds(request.intervalSeconds());
             job.setEnabled(request.enabled() == null || request.enabled());
-            if (job.getScheduleStatus() == ScheduleStatus.SCHEDULED && job.getTemporalScheduleId() != null) {
-                try {
-                    jobSchedulingService.updateSchedule(job);
-                } catch (Exception e) {
-                    log.error("Failed to update temporal schedule for job {}", job.getId(), e);
-                    job.setScheduleStatus(ScheduleStatus.FAILED);
-                }
-            }
             jobRepository.flush();
             return JobResponse.from(job);
         });
+        if (committed.scheduleStatus() == ScheduleStatus.SCHEDULED && committed.temporalScheduleId() != null) {
+            return syncSchedule(id);
+        }
+        return committed;
     }
 
     public void delete(UUID id) {
-        registrationTransaction.executeWithoutResult(status -> {
-            Job job = jobRepository.findByIdForUpdate(id).orElseThrow(() -> new JobNotFoundException(id));
-            if (job.getTemporalScheduleId() != null) {
+        synchronized (stripeFor(id)) {
+            String scheduleId = registrationTransaction.execute(status -> jobRepository
+                    .findByIdForUpdate(id)
+                    .orElseThrow(() -> new JobNotFoundException(id))
+                    .getTemporalScheduleId());
+            if (scheduleId != null) {
                 try {
-                    jobSchedulingService.deleteSchedule(job.getTemporalScheduleId());
+                    jobSchedulingService.deleteSchedule(scheduleId);
                 } catch (RuntimeException e) {
                     if (isScheduleNotFound(e)) {
-                        log.info("Temporal schedule {} for job {} was already deleted",
-                                job.getTemporalScheduleId(), id);
+                        log.info("Temporal schedule {} for job {} was already deleted", scheduleId, id);
                     } else {
                         // Abort: leave the job in place so the deletion can be retried
                         // instead of orphaning a schedule that keeps executing.
@@ -204,24 +205,70 @@ public class JobService {
                     }
                 }
             }
-            registrationRepository.deleteByJobId(id);
-            jobRepository.delete(job);
-            jobRepository.flush();
-        });
+            registrationTransaction.executeWithoutResult(status -> {
+                Job job = jobRepository.findByIdForUpdate(id).orElseThrow(() -> new JobNotFoundException(id));
+                registrationRepository.deleteByJobId(id);
+                jobRepository.delete(job);
+                jobRepository.flush();
+            });
+        }
     }
 
-    private Job trySchedule(Job job) {
-        if (job.getScheduleStatus() == ScheduleStatus.SCHEDULED && job.getTemporalScheduleId() != null) {
-            return job;
+    // JVM-local stripe locks serialize Temporal schedule mutations per job. A
+    // multi-instance deployment would need distributed locking or a single
+    // scheduling owner — out of scope for this single-node platform.
+    private static final int SCHEDULE_LOCK_STRIPES = 64;
+    private final Object[] scheduleLocks = new Object[SCHEDULE_LOCK_STRIPES];
+    {
+        java.util.Arrays.setAll(scheduleLocks, i -> new Object());
+    }
+
+    private Object stripeFor(UUID id) {
+        return scheduleLocks[Math.floorMod(id.hashCode(), SCHEDULE_LOCK_STRIPES)];
+    }
+
+    private JobResponse syncSchedule(UUID id) {
+        synchronized (stripeFor(id)) {
+            Job job = registrationTransaction.execute(status -> jobRepository.findById(id)
+                    .orElseThrow(() -> new JobNotFoundException(id)));
+            try {
+                if (job.getScheduleStatus() == ScheduleStatus.SCHEDULED
+                        && job.getTemporalScheduleId() != null) {
+                    jobSchedulingService.updateSchedule(job);
+                } else {
+                    persistSchedule(id, jobSchedulingService.createSchedule(job));
+                }
+            } catch (RuntimeException e) {
+                if (isScheduleNotFound(e)) {
+                    log.info("Temporal schedule {} missing for job {}; marking it FAILED for recreation",
+                            job.getTemporalScheduleId(), id);
+                } else {
+                    log.error("Failed to synchronize temporal schedule for job {}", id, e);
+                }
+                markScheduleFailed(id);
+            }
+            return registrationTransaction.execute(status -> JobResponse.from(
+                    jobRepository.findById(id).orElseThrow(() -> new JobNotFoundException(id))));
         }
-        try {
-            job.setTemporalScheduleId(jobSchedulingService.createSchedule(job));
-            job.setScheduleStatus(ScheduleStatus.SCHEDULED);
-        } catch (Exception e) {
-            log.error("Failed to create temporal schedule for job {}", job.getId(), e);
-            job.setScheduleStatus(ScheduleStatus.FAILED);
-        }
-        return jobRepository.save(job);
+    }
+
+    private void persistSchedule(UUID id, String scheduleId) {
+        registrationTransaction.executeWithoutResult(status ->
+                jobRepository.findByIdForUpdate(id).ifPresent(job -> {
+                    job.setTemporalScheduleId(scheduleId);
+                    job.setScheduleStatus(ScheduleStatus.SCHEDULED);
+                    jobRepository.flush();
+                }));
+    }
+
+    private void markScheduleFailed(UUID id) {
+        registrationTransaction.executeWithoutResult(status ->
+                jobRepository.findByIdForUpdate(id).ifPresent(job -> {
+                    if (job.getScheduleStatus() != ScheduleStatus.FAILED) {
+                        job.setScheduleStatus(ScheduleStatus.FAILED);
+                        jobRepository.flush();
+                    }
+                }));
     }
 
     public com.example.jobplatform.dto.JobPageResponse findAll(int page, int size, String search,

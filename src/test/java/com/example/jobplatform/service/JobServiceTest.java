@@ -77,6 +77,8 @@ class JobServiceTest {
                         && job.getTargetUrl().equals(invocation.getArgument(1))));
         when(jobs.findByIdForUpdate(any())).thenAnswer(invocation ->
                 Optional.ofNullable(storedJobs.get(invocation.getArgument(0))));
+        when(jobs.findById(any())).thenAnswer(invocation ->
+                Optional.ofNullable(storedJobs.get(invocation.getArgument(0))));
         doAnswer(invocation -> "job-" + ((Job) invocation.getArgument(0)).getId())
                 .when(scheduling).createSchedule(any());
         service = new JobService(jobs, scheduling, registrations,
@@ -93,7 +95,7 @@ class JobServiceTest {
         assertEquals("job-" + response.id(), response.temporalScheduleId());
         assertEquals(1, storedJobs.size());
         assertNotNull(storedRegistrations.get("first").getResponsePayload());
-        verify(transactions, times(2)).commit(any());
+        verify(transactions, atLeast(2)).commit(any());
     }
 
     @Test
@@ -315,7 +317,6 @@ class JobServiceTest {
 
         verify(jobs, never()).delete(any(Job.class));
         verify(registrations, never()).deleteByJobId(any());
-        verify(transactions, atLeastOnce()).rollback(any());
     }
 
     @Test
@@ -364,5 +365,95 @@ class JobServiceTest {
 
         assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
                 () -> service.delete(job.id()));
+    }
+
+    @Test
+    void updateCommitsBeforeTemporalSync() {
+        JobResponse job = registerJob();
+        clearInvocations(transactions, scheduling);
+
+        service.update(job.id(), request);
+
+        InOrder inOrder = inOrder(transactions, scheduling);
+        inOrder.verify(transactions).commit(any());
+        inOrder.verify(scheduling).updateSchedule(argThat((Job j) -> j.getId().equals(job.id())));
+    }
+
+    @Test
+    void syncAppliesLatestCommittedConfiguration() {
+        JobResponse job = registerJob();
+        JobRegistrationRequest newer = new JobRegistrationRequest(
+                request.name(), request.jobType(), request.targetUrl(), 99L, true);
+
+        service.update(job.id(), newer);
+
+        verify(scheduling).updateSchedule(argThat((Job j) -> j.getIntervalSeconds() == 99L));
+    }
+
+    @Test
+    void concurrentUpdatesConvergeToLatestCommittedState() throws Exception {
+        JobResponse job = registerJob();
+        JobRegistrationRequest slow10 = new JobRegistrationRequest(
+                "a-" + request.name(), request.jobType(), request.targetUrl(), 10L, true);
+        JobRegistrationRequest fast20 = new JobRegistrationRequest(
+                "b-" + request.name(), request.jobType(), request.targetUrl(), 20L, true);
+        var synced = java.util.Collections.synchronizedList(new java.util.ArrayList<Long>());
+        doAnswer(invocation -> {
+            Job arg = invocation.getArgument(0);
+            Thread.sleep(10); // widen the interleaving window
+            synced.add(arg.getIntervalSeconds());
+            return null;
+        }).when(scheduling).updateSchedule(any());
+
+        Thread t1 = new Thread(() -> service.update(job.id(), slow10));
+        Thread t2 = new Thread(() -> service.update(job.id(), fast20));
+        t1.start(); t2.start(); t1.join(); t2.join();
+
+        // The last Temporal sync must reflect whatever Postgres committed last,
+        // regardless of the order the RPCs completed in.
+        assertEquals(storedJobs.get(job.id()).getIntervalSeconds(), (long) synced.getLast());
+    }
+
+    @Test
+    void syncFailureMarksScheduleFailedButKeepsJob() {
+        JobResponse job = registerJob();
+        doThrow(new io.grpc.StatusRuntimeException(io.grpc.Status.UNAVAILABLE))
+                .when(scheduling).updateSchedule(any());
+
+        JobResponse response = service.update(job.id(), request);
+
+        assertEquals(ScheduleStatus.FAILED, response.scheduleStatus());
+        assertEquals(ScheduleStatus.FAILED, storedJobs.get(job.id()).getScheduleStatus());
+    }
+
+    @Test
+    void retryConvergesExistingSchedule() {
+        JobResponse job = registerJob();
+
+        service.schedule(job.id());
+
+        verify(scheduling).updateSchedule(argThat((Job j) -> j.getId().equals(job.id())));
+    }
+
+    @Test
+    void missingScheduleTransitionsToFailedForRecreation() {
+        JobResponse job = registerJob();
+        doThrow(new io.grpc.StatusRuntimeException(io.grpc.Status.NOT_FOUND))
+                .when(scheduling).updateSchedule(any());
+
+        JobResponse response = service.schedule(job.id());
+
+        assertEquals(ScheduleStatus.FAILED, response.scheduleStatus());
+    }
+
+    @Test
+    void retryAfterFailedRecreatesSchedule() {
+        JobResponse job = registerJob();
+        storedJobs.get(job.id()).setScheduleStatus(ScheduleStatus.FAILED);
+
+        JobResponse response = service.schedule(job.id());
+
+        verify(scheduling, times(2)).createSchedule(any());
+        assertEquals(ScheduleStatus.SCHEDULED, response.scheduleStatus());
     }
 }
