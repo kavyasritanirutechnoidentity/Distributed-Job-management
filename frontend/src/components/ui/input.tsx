@@ -6,7 +6,7 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
     <input
       ref={ref}
       className={cn(
-        "flex h-9 w-full rounded-xl border border-[hsl(217_80%_60%/0.18)] bg-[hsl(224_55%_9%/0.6)] px-3 py-1 text-sm backdrop-blur transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+        "flex h-9 w-full rounded-xl border border-[hsl(217_80%_60%/0.18)] bg-card/60 px-3 py-1 text-sm backdrop-blur transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
       {...props}
@@ -31,7 +31,7 @@ export const Select = forwardRef<HTMLSelectElement, React.SelectHTMLAttributes<H
     <select
       ref={ref}
       className={cn(
-        "flex h-9 w-full rounded-xl border border-[hsl(217_80%_60%/0.18)] bg-[hsl(224_55%_9%/0.6)] px-3 py-1 text-sm backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+        "flex h-9 w-full rounded-xl border border-[hsl(217_80%_60%/0.18)] bg-card/60 px-3 py-1 text-sm backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
       {...props}

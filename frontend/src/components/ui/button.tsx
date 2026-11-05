@@ -12,7 +12,7 @@ export const buttonVariants = cva(
         secondary:
           "bg-muted/80 text-foreground shadow-[inset_0_1px_0_hsl(210_100%_90%/0.06)] hover:bg-muted",
         outline:
-          "border border-[hsl(217_80%_60%/0.25)] bg-[hsl(217_60%_18%/0.3)] backdrop-blur hover:bg-[hsl(217_60%_22%/0.5)]",
+          "border border-[hsl(217_80%_60%/0.25)] bg-muted/40 backdrop-blur hover:bg-muted/60",
         ghost: "hover:bg-muted/60",
         destructive:
           "bg-gradient-to-b from-[hsl(0_80%_58%)] to-[hsl(0_70%_45%)] text-white shadow-[0_4px_20px_hsl(0_80%_50%/0.3)] hover:brightness-110",

@@ -74,6 +74,15 @@ export const jobExecutionSchema = z.object({
 
 export type JobExecution = z.infer<typeof jobExecutionSchema>;
 
+// Mirrors AuthResponse record on the backend.
+export const authResponseSchema = z.object({
+  token: z.string(),
+  username: z.string(),
+  role: z.enum(["ADMIN", "VIEWER"]),
+});
+
+export type AuthResponse = z.infer<typeof authResponseSchema>;
+
 // Backend error shapes from GlobalExceptionHandler.
 export const apiErrorSchema = z.object({
   error: z.string(),

@@ -4,6 +4,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Layout } from "@/components/Layout";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { AuthProvider } from "@/lib/auth";
+import { RequireAdmin, RequireAuth } from "@/components/RequireAuth";
+import { AuthPage } from "@/pages/AuthPage";
 
 const Dashboard = lazy(() =>
   import("@/pages/Dashboard").then((m) => ({ default: m.Dashboard })),
@@ -14,6 +17,9 @@ const JobDetailPage = lazy(() =>
 );
 const RegisterJobPage = lazy(() =>
   import("@/pages/RegisterJobPage").then((m) => ({ default: m.RegisterJobPage })),
+);
+const EditJobPage = lazy(() =>
+  import("@/pages/EditJobPage").then((m) => ({ default: m.EditJobPage })),
 );
 
 const queryClient = new QueryClient({
@@ -40,13 +46,34 @@ function withSuspense(node: React.ReactNode) {
 }
 
 const router = createBrowserRouter([
+  { path: "/login", element: <AuthPage mode="login" /> },
+  { path: "/register", element: <AuthPage mode="register" /> },
   {
-    element: <Layout />,
+    element: (
+      <RequireAuth>
+        <Layout />
+      </RequireAuth>
+    ),
     children: [
       { path: "/", element: withSuspense(<Dashboard />) },
       { path: "/jobs", element: withSuspense(<JobsPage />) },
-      { path: "/jobs/new", element: withSuspense(<RegisterJobPage />) },
+      {
+        path: "/jobs/new",
+        element: withSuspense(
+          <RequireAdmin>
+            <RegisterJobPage />
+          </RequireAdmin>,
+        ),
+      },
       { path: "/jobs/:id", element: withSuspense(<JobDetailPage />) },
+      {
+        path: "/jobs/:id/edit",
+        element: withSuspense(
+          <RequireAdmin>
+            <EditJobPage />
+          </RequireAdmin>,
+        ),
+      },
       {
         path: "*",
         element: withSuspense(
@@ -60,7 +87,9 @@ const router = createBrowserRouter([
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

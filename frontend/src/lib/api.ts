@@ -1,5 +1,8 @@
+import { clearToken, getToken } from "./auth";
 import {
   apiErrorSchema,
+  authResponseSchema,
+  type AuthResponse,
   type Job,
   type JobExecution,
   type JobRegistrationValues,
@@ -27,16 +30,27 @@ export function errorMessage(error: unknown): string {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
+    const token = getToken();
     response = await fetch(path, {
       ...init,
       signal: init?.signal ?? AbortSignal.timeout(35_000),
-      headers: { "Content-Type": "application/json", ...init?.headers },
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init?.headers,
+      },
     });
   } catch {
     throw new ApiError(0, "Cannot connect to the server or the request timed out. Please retry. Registration retries reuse the same request key.");
   }
 
   if (!response.ok) {
+    if (response.status === 401 && !path.startsWith("/api/auth/")) {
+      clearToken();
+      if (window.location.pathname !== "/login") {
+        window.location.assign("/login");
+      }
+    }
     const body = await response.json().catch(() => null);
     const parsed = apiErrorSchema.safeParse(body);
     if (parsed.success) {
@@ -47,6 +61,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       : `Request failed with status ${response.status}`);
   }
 
+  if (response.status === 204) return undefined as T;
   const data: unknown = await response.json();
   return data as T;
 }
@@ -89,4 +104,31 @@ export function getJobExecutions(id: string): Promise<JobExecution[]> {
 
 export function scheduleJob(id: string): Promise<Job> {
   return request<Job>(`/api/jobs/${id}/schedule`, { method: "POST" });
+}
+
+export function updateJob(id: string, values: JobRegistrationValues): Promise<Job> {
+  return request<Job>(`/api/jobs/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(values),
+  });
+}
+
+export function deleteJob(id: string): Promise<void> {
+  return request<void>(`/api/jobs/${id}`, { method: "DELETE" });
+}
+
+export async function login(username: string, password: string): Promise<AuthResponse> {
+  const data = await request<AuthResponse>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+  return authResponseSchema.parse(data);
+}
+
+export async function register(username: string, password: string): Promise<AuthResponse> {
+  const data = await request<AuthResponse>("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+  return authResponseSchema.parse(data);
 }

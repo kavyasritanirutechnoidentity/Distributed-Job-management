@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { getDashboard, getJob, getJobExecutions, getJobs, registerJob, scheduleJob, type JobListParams } from "@/lib/api";
+import { deleteJob, getDashboard, getJob, getJobExecutions, getJobs, registerJob, scheduleJob, updateJob, type JobListParams } from "@/lib/api";
 import { dashboardSchema, jobPageSchema, jobExecutionSchema, jobSchema, type JobRegistrationValues } from "@/lib/schemas";
 
 export const jobKeys = {
@@ -61,6 +61,30 @@ export function useScheduleJob(id: string) {
     mutationFn: () => scheduleJob(id).then(jobSchema.parse),
     onSuccess: (job) => {
       queryClient.setQueryData(jobKeys.detail(id), job);
+      queryClient.invalidateQueries({ queryKey: jobKeys.all });
+    },
+  });
+}
+
+export function useUpdateJob(id: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (values: JobRegistrationValues) =>
+      updateJob(id, values).then(jobSchema.parse),
+    onSuccess: (job) => {
+      queryClient.setQueryData(jobKeys.detail(id), job);
+      queryClient.invalidateQueries({ queryKey: jobKeys.all });
+    },
+  });
+}
+
+export function useDeleteJob() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteJob(id),
+    onSuccess: (_data, id) => {
+      queryClient.removeQueries({ queryKey: jobKeys.detail(id) });
+      queryClient.removeQueries({ queryKey: jobKeys.executions(id) });
       queryClient.invalidateQueries({ queryKey: jobKeys.all });
     },
   });

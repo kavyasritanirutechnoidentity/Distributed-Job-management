@@ -14,8 +14,8 @@ import {
 } from "@/lib/schemas";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Input, Label, Select } from "@/components/ui/input";
 import { StatusBadge } from "@/components/StatusBadge";
+import { JobFormFields } from "@/components/JobFormFields";
 
 function FieldError({ message, id }: { message?: string; id: string }) {
   if (!message) return null;
@@ -55,6 +55,8 @@ export function RegisterJobPage() {
     handleSubmit,
     reset,
     setError,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<JobRegistrationInput, unknown, JobRegistrationValues>({
     resolver: zodResolver(jobRegistrationSchema),
@@ -175,76 +177,12 @@ export function RegisterJobPage() {
             className="space-y-5"
             noValidate
           >
-            <div className="space-y-1.5">
-              <Label htmlFor="name">Name</Label>
-              <Input
-                id="name"
-                placeholder="e.g. Billing service health check"
-                aria-invalid={!!errors.name}
-                aria-describedby="name-error"
-                {...register("name")}
-              />
-              <FieldError id="name-error" message={errors.name?.message} />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="jobType">Job type</Label>
-              <Select id="jobType" aria-invalid={!!errors.jobType} {...register("jobType")}>
-                <option value="HEALTH_CHECK">Health check — poll a URL on a schedule</option>
-              </Select>
-              <FieldError id="jobType-error" message={errors.jobType?.message} />
-              <p className="text-xs text-muted-foreground">
-                Health check is currently the only supported job type.
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="targetUrl">Target URL</Label>
-              <Input
-                id="targetUrl"
-                type="url"
-                placeholder="https://example.com/health"
-                aria-invalid={!!errors.targetUrl}
-                aria-describedby="targetUrl-error"
-                {...register("targetUrl")}
-              />
-              <p className="text-xs text-muted-foreground">
-                Public HTTP(S) endpoints only. Local/private addresses and redirects are not supported.
-              </p>
-              <FieldError id="targetUrl-error" message={errors.targetUrl?.message} />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="intervalSeconds">Interval (seconds)</Label>
-              <Input
-                id="intervalSeconds"
-                type="number"
-                min={10}
-                step={1}
-                aria-invalid={!!errors.intervalSeconds}
-                aria-describedby="intervalSeconds-error intervalSeconds-hint"
-                {...register("intervalSeconds")}
-              />
-              <p id="intervalSeconds-hint" className="text-xs text-muted-foreground">
-                Minimum 10 seconds.
-              </p>
-              <FieldError
-                id="intervalSeconds-error"
-                message={errors.intervalSeconds?.message}
-              />
-            </div>
-
-            <div className="flex items-center gap-2.5">
-              <input
-                id="enabled"
-                type="checkbox"
-                className="h-4 w-4 rounded border-input accent-primary"
-                {...register("enabled")}
-              />
-              <Label htmlFor="enabled" className="font-normal">
-                Enabled — the schedule runs immediately after creation
-              </Label>
-            </div>
+            <JobFormFields
+              register={register}
+              errors={errors}
+              watch={watch}
+              setValue={setValue}
+            />
 
             <FieldError id="registration-error" message={errors.root?.message} />
             {pending.current && errors.root && (

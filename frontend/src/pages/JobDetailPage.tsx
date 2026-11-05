@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Copy, ExternalLink, Info, RefreshCw } from "lucide-react";
-import { useJob, useJobExecutions, useScheduleJob } from "@/hooks/useJobs";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Copy, ExternalLink, Info, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { useJob, useJobExecutions, useScheduleJob, useDeleteJob } from "@/hooks/useJobs";
 import { ApiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -109,7 +110,12 @@ export function JobDetailPage() {
   const { id = "" } = useParams();
   const { data: job, isPending, isError, error, refetch } = useJob(id);
   const schedule = useScheduleJob(id);
+  const deleteJob = useDeleteJob();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
   if (isPending) {
@@ -174,14 +180,34 @@ export function JobDetailPage() {
           </div>
           <p className="mt-1 font-mono text-sm text-muted-foreground">{job.targetUrl}</p>
         </div>
-        {canRetrySchedule && (
-          <Button onClick={() => setConfirmOpen(true)} disabled={schedule.isPending}>
-            <RefreshCw
-              className={`h-4 w-4 ${schedule.isPending ? "animate-spin" : ""}`}
-              aria-hidden
-            />
-            {job.scheduleStatus === "FAILED" ? "Retry schedule" : "Create schedule"}
-          </Button>
+        {isAdmin && (
+          <div className="flex gap-2">
+            {canRetrySchedule && (
+              <Button onClick={() => setConfirmOpen(true)} disabled={schedule.isPending}>
+                <RefreshCw
+                  className={`h-4 w-4 ${schedule.isPending ? "animate-spin" : ""}`}
+                  aria-hidden
+                />
+                {job.scheduleStatus === "FAILED" ? "Retry schedule" : "Create schedule"}
+              </Button>
+            )}
+            <Link
+              to={`/jobs/${job.id}/edit`}
+              className={buttonVariants({ variant: "outline" })}
+              aria-label="Edit job"
+              title="Edit job"
+            >
+              <Pencil className="h-4 w-4" aria-hidden />
+            </Link>
+            <Button
+              variant="destructive"
+              onClick={() => setDeleteOpen(true)}
+              aria-label="Delete job"
+              title="Delete job"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden />
+            </Button>
+          </div>
         )}
       </div>
 
@@ -288,6 +314,22 @@ export function JobDetailPage() {
         busy={schedule.isPending}
         onCancel={() => setConfirmOpen(false)}
         onConfirm={() => schedule.mutate(undefined, { onSettled: () => setConfirmOpen(false) })}
+      />
+
+      <ConfirmDialog
+        open={deleteOpen}
+        title={`Delete "${job.name}"?`}
+        description="This permanently removes the job and its Temporal schedule. Execution history in Temporal is not deleted. This action cannot be undone."
+        confirmLabel="Delete job"
+        confirmVariant="destructive"
+        busy={deleteJob.isPending}
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={() =>
+          deleteJob.mutate(job.id, {
+            onSuccess: () => navigate("/jobs", { replace: true }),
+            onSettled: () => setDeleteOpen(false),
+          })
+        }
       />
     </motion.div>
   );

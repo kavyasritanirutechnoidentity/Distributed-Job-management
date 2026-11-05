@@ -4,6 +4,24 @@
 
 @layer base {
   :root {
+    --background: 214 45% 97%;
+    --foreground: 224 45% 14%;
+    --card: 0 0% 100%;
+    --card-foreground: 224 45% 14%;
+    --muted: 214 32% 91%;
+    --muted-foreground: 220 15% 45%;
+    --primary: 211 90% 48%;
+    --primary-foreground: 0 0% 100%;
+    --border: 216 25% 85%;
+    --input: 216 25% 82%;
+    --ring: 211 90% 48%;
+    --success: 160 80% 30%;
+    --warning: 35 92% 40%;
+    --destructive: 0 74% 50%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
     --background: 224 60% 5%;
     --foreground: 213 45% 96%;
     --card: 224 50% 8%;
@@ -18,7 +36,6 @@
     --success: 160 84% 45%;
     --warning: 38 95% 55%;
     --destructive: 0 80% 58%;
-    --radius: 0.75rem;
   }
 
   * {
@@ -36,6 +53,12 @@
       radial-gradient(50rem 35rem at -10% 110%, hsl(200 100% 45% / 0.1), transparent 60%),
       radial-gradient(40rem 30rem at 50% 50%, hsl(230 80% 40% / 0.06), transparent 70%);
     background-attachment: fixed;
+  }
+
+  html:not(.dark) body {
+    background-image:
+      radial-gradient(60rem 40rem at 85% -10%, hsl(211 90% 55% / 0.08), transparent 60%),
+      radial-gradient(50rem 35rem at -10% 110%, hsl(200 90% 50% / 0.06), transparent 60%);
   }
 
   ::selection {
@@ -57,6 +80,14 @@
   ::-webkit-scrollbar-thumb:hover {
     background: hsl(217 45% 32%);
   }
+
+  html:not(.dark) ::-webkit-scrollbar-thumb {
+    background: hsl(216 25% 75%);
+    border-color: hsl(214 45% 97%);
+  }
+  html:not(.dark) ::-webkit-scrollbar-thumb:hover {
+    background: hsl(216 25% 65%);
+  }
 }
 
 @layer components {
@@ -75,6 +106,29 @@
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
+  }
+
+  html:not(.dark) .glass {
+    background: linear-gradient(145deg, hsl(0 0% 100% / 0.85), hsl(214 40% 96% / 0.9));
+    border-color: hsl(216 30% 80% / 0.9);
+    box-shadow:
+      0 8px 28px hsl(220 40% 50% / 0.12),
+      inset 0 1px 0 hsl(0 0% 100% / 0.9);
+  }
+
+  html:not(.dark) .glow-text {
+    background: linear-gradient(180deg, hsl(224 50% 18%), hsl(224 40% 40%));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  html:not(.dark) .lift:hover {
+    border-color: hsl(211 90% 50% / 0.35);
+    box-shadow:
+      0 12px 32px hsl(220 40% 50% / 0.14),
+      0 0 20px hsl(211 90% 55% / 0.08),
+      inset 0 1px 0 hsl(0 0% 100% / 0.9);
   }
 
   .icon-chip {

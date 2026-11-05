@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowUpDown, ChevronLeft, ChevronRight, ListChecks, Search } from "lucide-react";
-import { useJobs } from "@/hooks/useJobs";
+import { ArrowUpDown, ChevronLeft, ChevronRight, ListChecks, Pencil, Search, Trash2 } from "lucide-react";
+import { useDeleteJob, useJobs } from "@/hooks/useJobs";
+import { useAuth } from "@/lib/auth";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Input, Select } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState, StaleDataWarning } from "@/components/QueryState";
@@ -19,6 +21,10 @@ type EnabledFilter = "ALL" | "ENABLED" | "DISABLED";
 
 export function JobsPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
+  const deleteJob = useDeleteJob();
+  const [deleteTarget, setDeleteTarget] = useState<Job | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [enabledFilter, setEnabledFilter] = useState<EnabledFilter>("ALL");
@@ -150,7 +156,7 @@ export function JobsPage() {
           <div className="glass overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[hsl(217_80%_60%/0.14)] bg-[hsl(217_60%_18%/0.3)] text-left text-xs uppercase tracking-wider text-muted-foreground">
+                <tr className="border-b border-[hsl(217_80%_60%/0.14)] bg-muted/40 text-left text-xs uppercase tracking-wider text-muted-foreground">
                   <th className="px-4 py-3 font-medium">
                     <SortHeader label="Name" k="name" />
                   </th>
@@ -166,6 +172,7 @@ export function JobsPage() {
                   <th className="px-4 py-3 font-medium">
                     <SortHeader label="Created" k="createdAt" />
                   </th>
+                  {isAdmin && <th className="px-4 py-3 font-medium">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -199,6 +206,36 @@ export function JobsPage() {
                     <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">
                       {formatDateTime(job.createdAt)}
                     </td>
+                    {isAdmin && (
+                      <td className="whitespace-nowrap px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            aria-label={`Edit ${job.name}`}
+                            title="Edit job"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/jobs/${job.id}/edit`);
+                            }}
+                            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+                          >
+                            <Pencil className="h-4 w-4" aria-hidden />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Delete ${job.name}`}
+                            title="Delete job"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteTarget(job);
+                            }}
+                            className="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -230,6 +267,20 @@ export function JobsPage() {
           )}
         </>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title={deleteTarget ? `Delete "${deleteTarget.name}"?` : ""}
+        description="This permanently removes the job and its Temporal schedule. This action cannot be undone."
+        confirmLabel="Delete job"
+        confirmVariant="destructive"
+        busy={deleteJob.isPending}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          deleteJob.mutate(deleteTarget.id, { onSettled: () => setDeleteTarget(null) });
+        }}
+      />
     </div>
   );
 }

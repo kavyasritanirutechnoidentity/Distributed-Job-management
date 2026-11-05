@@ -226,7 +226,8 @@ export function Dashboard() {
                       </Pie>
                       <Tooltip
                         contentStyle={{
-                          background: "hsl(224 55% 9% / 0.9)",
+                          background: "hsl(var(--card) / 0.95)",
+                          color: "hsl(var(--foreground))",
                           border: "1px solid hsl(217 80% 60% / 0.2)",
                           borderRadius: 12,
                           fontSize: 12,
