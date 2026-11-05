@@ -45,7 +45,7 @@ public class AuthController {
                 .filter(a -> a.startsWith("ROLE_"))
                 .map(a -> Role.valueOf(a.substring(5)))
                 .findFirst()
-                .orElse(Role.VIEWER);
+                .orElseThrow(() -> new IllegalStateException("Authenticated principal has no role"));
         return new CurrentUserResponse(authentication.getName(), role);
     }
 }
