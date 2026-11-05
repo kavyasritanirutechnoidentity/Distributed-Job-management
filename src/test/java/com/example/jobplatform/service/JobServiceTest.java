@@ -230,6 +230,37 @@ class JobServiceTest {
     }
 
     @Test
+    void updateTakesRegistrationIdentityLockBeforeDuplicateCheck() {
+        JobResponse registered = service.register("first", request);
+        JobRegistrationRequest updated = new JobRegistrationRequest(
+                "renamed", request.jobType(), "https://example.com/other", 30L, true);
+
+        service.update(registered.id(), updated);
+
+        var inOrder = inOrder(jobs);
+        inOrder.verify(jobs, times(2)).findByIdForUpdate(registered.id());
+        inOrder.verify(jobs).lockRegistration(updated.name(), updated.targetUrl());
+        inOrder.verify(jobs).existsByNameAndTargetUrlAndIdNot(
+                updated.name(), updated.targetUrl(), registered.id());
+    }
+
+    @Test
+    void updateRejectsIdentityHeldByAnotherJob() {
+        service.register("first", request);
+        JobResponse second = service.register("second", new JobRegistrationRequest(
+                "other", request.jobType(), "https://example.com/other", 10L, true));
+        when(jobs.existsByNameAndTargetUrlAndIdNot(request.name(), request.targetUrl(), second.id()))
+                .thenReturn(true);
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.update(second.id(), request));
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        assertEquals("A job with this name and target URL already exists", exception.getReason());
+        verify(jobs, times(2)).lockRegistration(request.name(), request.targetUrl());
+    }
+
+    @Test
     void locksOnlyTheRegistrationIdentity() {
         service.register("first", request);
         verify(jobs).lockRegistration(request.name(), request.targetUrl());

@@ -159,6 +159,7 @@ public class JobService {
     public JobResponse update(UUID id, JobRegistrationRequest request) {
         return registrationTransaction.execute(status -> {
             Job job = jobRepository.findByIdForUpdate(id).orElseThrow(() -> new JobNotFoundException(id));
+            jobRepository.lockRegistration(request.name(), request.targetUrl());
             if (jobRepository.existsByNameAndTargetUrlAndIdNot(request.name(), request.targetUrl(), id)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "A job with this name and target URL already exists");
