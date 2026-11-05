@@ -18,6 +18,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -74,6 +76,16 @@ class AuthControllerSecurityTest {
     }
 
     @Test
+    @WithMockUser(authorities = "ROLE_ADMIN")
+    void responsesIncludeSecurityHeaders() throws Exception {
+        mvc.perform(get("/api/auth/me"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Security-Policy",
+                        containsString("default-src 'none'")))
+                .andExpect(header().string("Referrer-Policy", "no-referrer"));
+    }
+
+    @Test
     void registerStaysPublic() throws Exception {
         when(authService.register(anyString(), anyString()))
                 .thenReturn(new AuthResponse("token", "nani", Role.VIEWER));
@@ -87,7 +99,7 @@ class AuthControllerSecurityTest {
 
     @Test
     void loginStaysPublic() throws Exception {
-        when(authService.login(anyString(), anyString()))
+        when(authService.login(anyString(), anyString(), anyString()))
                 .thenReturn(new AuthResponse("token", "admin", Role.ADMIN));
         mvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

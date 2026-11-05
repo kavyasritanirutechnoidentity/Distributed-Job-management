@@ -34,8 +34,9 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public AuthResponse login(@Valid @RequestBody LoginRequest request) {
-        return authService.login(request.username(), request.password());
+    public AuthResponse login(@Valid @RequestBody LoginRequest request,
+                              jakarta.servlet.http.HttpServletRequest http) {
+        return authService.login(request.username(), request.password(), http.getRemoteAddr());
     }
 
     @GetMapping("/me")

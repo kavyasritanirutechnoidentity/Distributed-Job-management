@@ -23,6 +23,9 @@ public class JwtService {
     public JwtService(
             @Value("${security.jwt.secret}") String secret,
             @Value("${security.jwt.ttl-minutes:120}") long ttlMinutes) {
+        if (secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalArgumentException("security.jwt.secret must be at least 32 bytes");
+        }
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.ttl = Duration.ofMinutes(ttlMinutes);
     }
