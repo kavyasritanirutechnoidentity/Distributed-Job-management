@@ -21,3 +21,7 @@ target/
 frontend/node_modules/
 frontend/dist/
 *.tsbuildinfo
+
+### Project docs ###
+DEMO_GUIDE.md
+TESTING.md
