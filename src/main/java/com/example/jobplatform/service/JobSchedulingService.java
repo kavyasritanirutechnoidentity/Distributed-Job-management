@@ -43,7 +43,8 @@ public class JobSchedulingService {
                     io.temporal.client.schedules.ScheduleOptions.newBuilder().build());
             log.info("Created temporal schedule {} for job {}", scheduleId, job.getId());
         } catch (ScheduleAlreadyRunningException e) {
-            log.info("Schedule {} already exists, reusing it", scheduleId);
+            log.info("Schedule {} already exists, updating it to match current job state", scheduleId);
+            updateSchedule(job);
         }
         return scheduleId;
     }
