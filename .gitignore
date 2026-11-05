@@ -25,3 +25,4 @@ frontend/dist/
 ### Project docs ###
 DEMO_GUIDE.md
 TESTING.md
+.env
