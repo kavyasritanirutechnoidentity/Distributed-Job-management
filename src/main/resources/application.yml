@@ -12,6 +12,15 @@ spring:
   flyway:
     enabled: true
 
+security:
+  jwt:
+    # Dev-only default; override with JWT_SECRET in real deployments (min 32 bytes).
+    secret: ${JWT_SECRET:dev-only-insecure-jwt-secret-change-me-please}
+    ttl-minutes: ${JWT_TTL_MINUTES:120}
+  admin:
+    username: ${ADMIN_USERNAME:admin}
+    password: ${ADMIN_PASSWORD:admin123}
+
 temporal:
   service-target: ${TEMPORAL_SERVICE_TARGET:127.0.0.1:7233}
   namespace: ${TEMPORAL_NAMESPACE:default}
