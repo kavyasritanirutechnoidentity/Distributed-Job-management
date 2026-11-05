@@ -156,6 +156,53 @@ public class JobService {
         });
     }
 
+    public JobResponse update(UUID id, JobRegistrationRequest request) {
+        return registrationTransaction.execute(status -> {
+            Job job = jobRepository.findByIdForUpdate(id).orElseThrow(() -> new JobNotFoundException(id));
+            if (jobRepository.existsByNameAndTargetUrlAndIdNot(request.name(), request.targetUrl(), id)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "A job with this name and target URL already exists");
+            }
+            try {
+                targetUrlPolicy.validate(request.targetUrl());
+            } catch (IllegalArgumentException e) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+            }
+            job.setName(request.name());
+            job.setJobType(request.jobType());
+            job.setTargetUrl(request.targetUrl());
+            job.setIntervalSeconds(request.intervalSeconds());
+            job.setEnabled(request.enabled() == null || request.enabled());
+            if (job.getScheduleStatus() == ScheduleStatus.SCHEDULED && job.getTemporalScheduleId() != null) {
+                try {
+                    jobSchedulingService.updateSchedule(job);
+                } catch (Exception e) {
+                    log.error("Failed to update temporal schedule for job {}", job.getId(), e);
+                    job.setScheduleStatus(ScheduleStatus.FAILED);
+                }
+            }
+            jobRepository.flush();
+            return JobResponse.from(job);
+        });
+    }
+
+    public void delete(UUID id) {
+        registrationTransaction.executeWithoutResult(status -> {
+            Job job = jobRepository.findByIdForUpdate(id).orElseThrow(() -> new JobNotFoundException(id));
+            if (job.getTemporalScheduleId() != null) {
+                try {
+                    jobSchedulingService.deleteSchedule(job.getTemporalScheduleId());
+                } catch (Exception e) {
+                    log.warn("Could not delete temporal schedule {} for job {}: {}",
+                            job.getTemporalScheduleId(), id, e.getMessage());
+                }
+            }
+            registrationRepository.deleteByJobId(id);
+            jobRepository.delete(job);
+            jobRepository.flush();
+        });
+    }
+
     private Job trySchedule(Job job) {
         if (job.getScheduleStatus() == ScheduleStatus.SCHEDULED && job.getTemporalScheduleId() != null) {
             return job;

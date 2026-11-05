@@ -14,6 +14,8 @@ public interface JobRepository extends JpaRepository<Job, UUID>, JpaSpecificatio
             + "AND md5(target_url) = md5(:url) AND target_url = :url)", nativeQuery = true)
     boolean existsByNameAndTargetUrl(@Param("name") String name, @Param("url") String targetUrl);
 
+    boolean existsByNameAndTargetUrlAndIdNot(String name, String targetUrl, UUID id);
+
     @Query(value = "SELECT CAST(pg_advisory_xact_lock(hashtext(:name), hashtext(:url)) AS text)", nativeQuery = true)
     String lockRegistration(@Param("name") String name, @Param("url") String url);
 

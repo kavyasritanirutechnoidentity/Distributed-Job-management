@@ -23,4 +23,6 @@ public interface JobRegistrationRepository extends JpaRepository<JobRegistration
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select registration from JobRegistration registration where registration.idempotencyKey = :key")
     Optional<JobRegistration> findByKeyForUpdate(@Param("key") String key);
+
+    void deleteByJobId(java.util.UUID jobId);
 }

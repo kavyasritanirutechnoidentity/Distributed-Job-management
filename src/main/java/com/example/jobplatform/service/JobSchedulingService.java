@@ -38,8 +38,29 @@ public class JobSchedulingService {
 
     public String createSchedule(Job job) {
         String scheduleId = scheduleIdFor(job);
+        try {
+            scheduleClient.createSchedule(scheduleId, buildSchedule(job),
+                    io.temporal.client.schedules.ScheduleOptions.newBuilder().build());
+            log.info("Created temporal schedule {} for job {}", scheduleId, job.getId());
+        } catch (ScheduleAlreadyRunningException e) {
+            log.info("Schedule {} already exists, reusing it", scheduleId);
+        }
+        return scheduleId;
+    }
 
-        Schedule schedule = Schedule.newBuilder()
+    public void updateSchedule(Job job) {
+        scheduleClient.getHandle(scheduleIdFor(job))
+                .update(input -> new io.temporal.client.schedules.ScheduleUpdate(buildSchedule(job)));
+        log.info("Updated temporal schedule {} for job {}", scheduleIdFor(job), job.getId());
+    }
+
+    public void deleteSchedule(String scheduleId) {
+        scheduleClient.getHandle(scheduleId).delete();
+        log.info("Deleted temporal schedule {}", scheduleId);
+    }
+
+    private Schedule buildSchedule(Job job) {
+        return Schedule.newBuilder()
                 .setAction(ScheduleActionStartWorkflow.newBuilder()
                         .setWorkflowType(JobExecutionWorkflow.class)
                         .setArguments(new JobExecutionRequest(job.getId(), job.getTargetUrl()))
@@ -57,14 +78,5 @@ public class JobSchedulingService {
                         .setNote(job.isEnabled() ? "" : "job registered as disabled")
                         .build())
                 .build();
-
-        try {
-            scheduleClient.createSchedule(scheduleId, schedule,
-                    io.temporal.client.schedules.ScheduleOptions.newBuilder().build());
-            log.info("Created temporal schedule {} for job {}", scheduleId, job.getId());
-        } catch (ScheduleAlreadyRunningException e) {
-            log.info("Schedule {} already exists, reusing it", scheduleId);
-        }
-        return scheduleId;
     }
 }
