@@ -98,4 +98,53 @@ class AuthServiceTest {
         assertThrows(ResponseStatusException.class, () -> timed.login("ghost", "wrong", IP));
         verify(spy).matches(anyString(), anyString());
     }
+
+    @SuppressWarnings("unchecked")
+    private java.util.Map<String, AuthService.FailedLogin> failures() {
+        return (java.util.Map<String, AuthService.FailedLogin>)
+                org.springframework.test.util.ReflectionTestUtils.getField(service, "failures");
+    }
+
+    @Test
+    void staleFailureEntryResetsCount() {
+        seedUser();
+        failures().put("admin@" + IP, new AuthService.FailedLogin(
+                4, java.time.Instant.MIN, java.time.Instant.now().minusSeconds(660)));
+
+        assertThrows(ResponseStatusException.class, () -> service.login("admin", "wrong", IP));
+
+        assertEquals(1, failures().get("admin@" + IP).count());
+    }
+
+    @Test
+    void sweepReclaimsStaleEntriesWhenMapGrows() {
+        seedUser();
+        for (int i = 0; i < 10_005; i++) {
+            failures().put("user" + i + "@" + IP, new AuthService.FailedLogin(
+                    2, java.time.Instant.MIN, java.time.Instant.now().minusSeconds(660)));
+        }
+
+        assertThrows(ResponseStatusException.class, () -> service.login("admin", "wrong", IP));
+
+        assertEquals(1, failures().size());
+    }
+
+    @Test
+    void liveLockoutSurvivesSweep() {
+        seedUser();
+        for (int i = 0; i < 10_005; i++) {
+            failures().put("user" + i + "@" + IP, new AuthService.FailedLogin(
+                    2, java.time.Instant.MIN, java.time.Instant.now().minusSeconds(660)));
+        }
+        failures().put("admin@" + IP, new AuthService.FailedLogin(
+                5, java.time.Instant.now().plusSeconds(60), java.time.Instant.now()));
+
+        // a failed login from another key triggers the sweep; the live lockout must remain
+        when(users.findByUsername("other")).thenReturn(Optional.empty());
+        assertThrows(ResponseStatusException.class, () -> service.login("other", "wrong", IP));
+
+        ResponseStatusException locked = assertThrows(ResponseStatusException.class,
+                () -> service.login("admin", "correct", IP));
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS, locked.getStatusCode());
+    }
 }

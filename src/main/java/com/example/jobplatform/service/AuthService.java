@@ -48,6 +48,8 @@ public class AuthService {
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
     private static final int MAX_FAILED_ATTEMPTS = 5;
     private static final Duration LOCKOUT = Duration.ofMinutes(1);
+    private static final Duration ENTRY_TTL = Duration.ofMinutes(10);
+    private static final int MAX_TRACKED_KEYS = 10_000;
     // Valid BCrypt hash compared against when the user does not exist, so response
     // time does not reveal whether a username is registered.
     private static final String DUMMY_HASH =
@@ -72,16 +74,26 @@ public class AuthService {
             if (user == null) {
                 passwordEncoder.matches(password, DUMMY_HASH);
             }
+            Instant now = Instant.now();
+            Instant staleBefore = now.minus(ENTRY_TTL);
             failures.compute(key, (k, f) -> {
+                if (f != null && f.lastAttempt().isBefore(staleBefore)) {
+                    f = null;
+                }
                 int count = f == null ? 1 : f.count() + 1;
                 Instant lockedUntil = count >= MAX_FAILED_ATTEMPTS
-                        ? Instant.now().plus(LOCKOUT) : Instant.MIN;
+                        ? now.plus(LOCKOUT) : Instant.MIN;
                 if (count == MAX_FAILED_ATTEMPTS) {
                     log.warn("Locking login attempts for '{}' from '{}' after {} failures",
                             username, remoteAddr, MAX_FAILED_ATTEMPTS);
                 }
-                return new FailedLogin(count, lockedUntil);
+                return new FailedLogin(count, lockedUntil, now);
             });
+            if (failures.size() > MAX_TRACKED_KEYS) {
+                // Amortized sweep: only stale entries are reclaimed, so an
+                // attacker can never push out a live lockout by rotating keys.
+                failures.entrySet().removeIf(e -> e.getValue().lastAttempt().isBefore(staleBefore));
+            }
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
         }
         failures.remove(key);
@@ -89,6 +101,6 @@ public class AuthService {
                 jwtService.issueToken(user.getUsername(), user.getRole()), user.getUsername(), user.getRole());
     }
 
-    private record FailedLogin(int count, Instant lockedUntil) {
+    record FailedLogin(int count, Instant lockedUntil, Instant lastAttempt) {
     }
 }
