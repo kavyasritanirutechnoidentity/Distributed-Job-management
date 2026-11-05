@@ -23,13 +23,20 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http,
-                                           JwtAuthenticationFilter jwtFilter) throws Exception {
+                                           JwtAuthenticationFilter jwtFilter,
+                                           CorsConfigurationSource corsSource) throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
                 .httpBasic(basic -> basic.disable())
                 .formLogin(form -> form.disable())
                 .logout(logout -> logout.disable())
-                .cors(cors -> cors.configurationSource(corsSource()))
+                .cors(cors -> cors.configurationSource(corsSource))
+                .headers(headers -> headers
+                        .contentSecurityPolicy(csp -> csp.policyDirectives(
+                                "default-src 'none'; frame-ancestors 'none'"))
+                        .referrerPolicy(ref -> ref.policy(
+                                org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter
+                                        .ReferrerPolicy.NO_REFERRER)))
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
@@ -59,9 +66,11 @@ public class SecurityConfig {
     }
 
     @Bean
-    public CorsConfigurationSource corsSource() {
+    public CorsConfigurationSource corsSource(
+            @org.springframework.beans.factory.annotation.Value("${security.cors.allowed-origins}")
+            String[] allowedOrigins) {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
+        config.setAllowedOriginPatterns(List.of(allowedOrigins));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "Idempotency-Key"));
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
