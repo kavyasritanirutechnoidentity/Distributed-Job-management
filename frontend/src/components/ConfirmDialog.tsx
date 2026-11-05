@@ -8,6 +8,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   confirmVariant = "default",
   busy = false,
+  error,
   onConfirm,
   onCancel,
 }: {
@@ -17,6 +18,7 @@ export function ConfirmDialog({
   confirmLabel?: string;
   confirmVariant?: "default" | "destructive";
   busy?: boolean;
+  error?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -48,6 +50,11 @@ export function ConfirmDialog({
           {title}
         </h2>
         <p className="mt-2 text-sm text-muted-foreground">{description}</p>
+        {error && (
+          <p role="alert" className="mt-3 text-sm text-destructive">
+            {error}
+          </p>
+        )}
         <div className="mt-6 flex justify-end gap-2">
           <Button ref={cancelRef} variant="outline" onClick={onCancel} disabled={busy}>
             Cancel

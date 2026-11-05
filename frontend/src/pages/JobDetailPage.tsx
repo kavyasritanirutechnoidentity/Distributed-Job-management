@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Copy, ExternalLink, Info, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { useJob, useJobExecutions, useScheduleJob, useDeleteJob } from "@/hooks/useJobs";
-import { ApiError } from "@/lib/api";
+import { ApiError, errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -312,8 +312,15 @@ export function JobDetailPage() {
         description={`This will ask the backend to create a Temporal schedule for "${job.name}". The request is safe to repeat — the backend no-ops if the schedule already exists.`}
         confirmLabel={job.scheduleStatus === "FAILED" ? "Retry" : "Create"}
         busy={schedule.isPending}
-        onCancel={() => setConfirmOpen(false)}
-        onConfirm={() => schedule.mutate(undefined, { onSettled: () => setConfirmOpen(false) })}
+        error={schedule.isError ? errorMessage(schedule.error) : undefined}
+        onCancel={() => {
+          setConfirmOpen(false);
+          schedule.reset();
+        }}
+        onConfirm={() => {
+          if (schedule.isPending) return;
+          schedule.mutate(undefined, { onSuccess: () => setConfirmOpen(false) });
+        }}
       />
 
       <ConfirmDialog
@@ -323,11 +330,15 @@ export function JobDetailPage() {
         confirmLabel="Delete job"
         confirmVariant="destructive"
         busy={deleteJob.isPending}
-        onCancel={() => setDeleteOpen(false)}
+        error={deleteJob.isError ? errorMessage(deleteJob.error) : undefined}
+        onCancel={() => {
+          setDeleteOpen(false);
+          deleteJob.reset();
+        }}
         onConfirm={() =>
+          !deleteJob.isPending &&
           deleteJob.mutate(job.id, {
             onSuccess: () => navigate("/jobs", { replace: true }),
-            onSettled: () => setDeleteOpen(false),
           })
         }
       />

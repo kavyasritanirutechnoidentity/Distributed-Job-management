@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowUpDown, ChevronLeft, ChevronRight, ListChecks, Pencil, Search, Trash2 } from "lucide-react";
 import { useDeleteJob, useJobs } from "@/hooks/useJobs";
+import { errorMessage } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Input, Select } from "@/components/ui/input";
@@ -275,10 +276,16 @@ export function JobsPage() {
         confirmLabel="Delete job"
         confirmVariant="destructive"
         busy={deleteJob.isPending}
-        onCancel={() => setDeleteTarget(null)}
+        error={deleteJob.isError ? errorMessage(deleteJob.error) : undefined}
+        onCancel={() => {
+          setDeleteTarget(null);
+          deleteJob.reset();
+        }}
         onConfirm={() => {
-          if (!deleteTarget) return;
-          deleteJob.mutate(deleteTarget.id, { onSettled: () => setDeleteTarget(null) });
+          if (!deleteTarget || deleteJob.isPending) return;
+          deleteJob.mutate(deleteTarget.id, {
+            onSuccess: () => setDeleteTarget(null),
+          });
         }}
       />
     </div>

@@ -6,6 +6,7 @@ import { useJob, useUpdateJob } from "@/hooks/useJobs";
 import { ApiError, errorMessage } from "@/lib/api";
 import {
   jobRegistrationSchema,
+  type Job,
   type JobRegistrationInput,
   type JobRegistrationValues,
 } from "@/lib/schemas";
@@ -26,49 +27,7 @@ function FieldError({ message, id }: { message?: string; id: string }) {
 
 export function EditJobPage() {
   const { id = "" } = useParams();
-  const navigate = useNavigate();
   const { data: job, isPending, error } = useJob(id);
-  const updateJob = useUpdateJob(id);
-
-  const {
-    register,
-    handleSubmit,
-    setError,
-    watch,
-    setValue,
-    formState: { errors, isSubmitting },
-  } = useForm<JobRegistrationInput, unknown, JobRegistrationValues>({
-    resolver: zodResolver(jobRegistrationSchema),
-    values: job
-      ? {
-          name: job.name,
-          jobType: job.jobType,
-          targetUrl: job.targetUrl,
-          intervalSeconds: job.intervalSeconds,
-          enabled: job.enabled,
-        }
-      : undefined,
-  });
-
-  async function onSubmit(values: JobRegistrationValues) {
-    try {
-      const updated = await updateJob.mutateAsync(values);
-      navigate(`/jobs/${updated.id}`, { replace: true });
-    } catch (e) {
-      if (e instanceof ApiError && e.fieldErrors) {
-        for (const [field, message] of Object.entries(e.fieldErrors)) {
-          if (field in values) {
-            setError(field as keyof JobRegistrationValues, { type: "server", message });
-          }
-        }
-        if (Object.keys(e.fieldErrors).length === 0) {
-          setError("root", { message: errorMessage(e) });
-        }
-      } else {
-        setError("root", { message: errorMessage(e) });
-      }
-    }
-  }
 
   if (isPending) {
     return (
@@ -92,6 +51,51 @@ export function EditJobPage() {
         }
       />
     );
+  }
+
+  return <EditJobForm key={job.id} job={job} />;
+}
+
+function EditJobForm({ job }: { job: Job }) {
+  const navigate = useNavigate();
+  const updateJob = useUpdateJob(job.id);
+
+  const {
+    register,
+    handleSubmit,
+    setError,
+    watch,
+    setValue,
+    formState: { errors, isSubmitting },
+  } = useForm<JobRegistrationInput, unknown, JobRegistrationValues>({
+    resolver: zodResolver(jobRegistrationSchema),
+    defaultValues: {
+      name: job.name,
+      jobType: job.jobType,
+      targetUrl: job.targetUrl,
+      intervalSeconds: job.intervalSeconds,
+      enabled: job.enabled,
+    },
+  });
+
+  async function onSubmit(values: JobRegistrationValues) {
+    try {
+      const updated = await updateJob.mutateAsync(values);
+      navigate(`/jobs/${updated.id}`, { replace: true });
+    } catch (e) {
+      if (e instanceof ApiError && e.fieldErrors) {
+        for (const [field, message] of Object.entries(e.fieldErrors)) {
+          if (field in values) {
+            setError(field as keyof JobRegistrationValues, { type: "server", message });
+          }
+        }
+        if (Object.keys(e.fieldErrors).length === 0) {
+          setError("root", { message: errorMessage(e) });
+        }
+      } else {
+        setError("root", { message: errorMessage(e) });
+      }
+    }
   }
 
   return (
