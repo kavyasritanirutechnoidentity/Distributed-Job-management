@@ -127,10 +127,6 @@ public class JobService {
         }
     }
 
-    public JobResponse register(JobRegistrationRequest request) {
-        return register(UUID.randomUUID().toString(), request);
-    }
-
     private Job saveNewJob(JobRegistrationRequest request) {
         jobRepository.lockRegistration(request.name(), request.targetUrl());
         if (jobRepository.existsByNameAndTargetUrl(request.name(), request.targetUrl())) {

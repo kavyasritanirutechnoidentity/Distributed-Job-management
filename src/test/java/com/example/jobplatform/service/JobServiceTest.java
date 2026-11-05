@@ -151,9 +151,9 @@ class JobServiceTest {
 
     @Test
     void rejectsDuplicatesWithoutIdempotencyKey() {
-        service.register(request);
+        service.register(UUID.randomUUID().toString(), request);
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
-                () -> service.register(request));
+                () -> service.register(UUID.randomUUID().toString(), request));
         assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
         assertEquals(1, storedJobs.size());
     }
