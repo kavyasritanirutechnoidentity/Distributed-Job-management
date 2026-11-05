@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -83,6 +84,17 @@ class AuthControllerSecurityTest {
                 .andExpect(header().string("Content-Security-Policy",
                         containsString("default-src 'none'")))
                 .andExpect(header().string("Referrer-Policy", "no-referrer"));
+    }
+
+    @Test
+    void healthEndpointsDoNotRequireAuthentication() throws Exception {
+        // No actuator mapping exists in this slice, so the request falls through
+        // to the global error handler — anything but 401 proves it passed the
+        // security filter chain unauthenticated.
+        mvc.perform(get("/actuator/health"))
+                .andExpect(result -> assertNotEquals(401, result.getResponse().getStatus()));
+        mvc.perform(get("/actuator/health/readiness"))
+                .andExpect(result -> assertNotEquals(401, result.getResponse().getStatus()));
     }
 
     @Test

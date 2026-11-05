@@ -22,6 +22,8 @@ public class TemporalConfig {
                         .setRpcTimeout(java.time.Duration.ofSeconds(5))
                         .setRpcRetryOptions(io.temporal.serviceclient.RpcRetryOptions.newBuilder()
                                 .setMaximumAttempts(2).build())
+                        .setHealthCheckTimeout(java.time.Duration.ofSeconds(2))
+                        .setHealthCheckAttemptTimeout(java.time.Duration.ofSeconds(1))
                         .build());
     }
 

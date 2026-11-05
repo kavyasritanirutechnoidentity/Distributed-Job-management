@@ -8,7 +8,9 @@ RUN mvn -q -B package -DskipTests
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 COPY --from=build /app/target/job-platform-0.0.1-SNAPSHOT.jar app.jar
-RUN groupadd -r app && useradd -r -g app -u 1001 app
+RUN groupadd -r app && useradd -r -g app -u 1001 app \
+    && apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 USER app
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
