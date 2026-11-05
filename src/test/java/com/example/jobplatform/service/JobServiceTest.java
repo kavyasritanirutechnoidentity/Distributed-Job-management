@@ -36,6 +36,7 @@ class JobServiceTest {
     private final JobRegistrationRepository registrations = mock(JobRegistrationRepository.class);
     private final JobSchedulingService scheduling = mock(JobSchedulingService.class);
     private final PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
+    private final TargetUrlPolicy urlPolicy = mock(TargetUrlPolicy.class);
     private final Map<String, JobRegistration> storedRegistrations = new HashMap<>();
     private final Map<UUID, Job> storedJobs = new HashMap<>();
     private final JobRegistrationRequest request = new JobRegistrationRequest(
@@ -81,7 +82,7 @@ class JobServiceTest {
         service = new JobService(jobs, scheduling, registrations,
                 new ObjectMapper().findAndRegisterModules(), transactions,
                 mock(WorkflowServiceStubs.class),
-                new TemporalProperties("localhost:7233", "default", "test-queue"), mock(TargetUrlPolicy.class));
+                new TemporalProperties("localhost:7233", "default", "test-queue"), urlPolicy);
     }
 
     @Test
@@ -315,6 +316,44 @@ class JobServiceTest {
         verify(jobs, never()).delete(any(Job.class));
         verify(registrations, never()).deleteByJobId(any());
         verify(transactions, atLeastOnce()).rollback(any());
+    }
+
+    @Test
+    void registrationValidatesUrlBeforeOpeningTransaction() {
+        service.register("first", request);
+
+        InOrder inOrder = inOrder(urlPolicy, transactions);
+        inOrder.verify(urlPolicy).validate(request.targetUrl());
+        inOrder.verify(transactions).getTransaction(any());
+        verify(urlPolicy, times(1)).validate(anyString());
+    }
+
+    @Test
+    void updateValidatesUrlBeforeOpeningTransaction() {
+        JobResponse job = registerJob();
+        clearInvocations(urlPolicy, transactions);
+
+        service.update(job.id(), request);
+
+        InOrder inOrder = inOrder(urlPolicy, transactions);
+        inOrder.verify(urlPolicy).validate(request.targetUrl());
+        inOrder.verify(transactions).getTransaction(any());
+        verify(urlPolicy, times(1)).validate(anyString());
+    }
+
+    @Test
+    void invalidUrlOpensNoTransaction() {
+        doThrow(new IllegalArgumentException("not a public endpoint"))
+                .when(urlPolicy).validate(anyString());
+
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.register("first", request));
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertThrows(ResponseStatusException.class,
+                () -> service.update(UUID.randomUUID(), request));
+
+        verify(transactions, never()).getTransaction(any());
+        verifyNoInteractions(jobs, registrations, scheduling);
     }
 
     @Test

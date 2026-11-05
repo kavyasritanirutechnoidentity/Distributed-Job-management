@@ -70,6 +70,7 @@ public class JobService {
         }
         JobRegistrationRequest normalized = new JobRegistrationRequest(request.name(), request.jobType(),
                 request.targetUrl(), request.intervalSeconds(), request.enabled() == null || request.enabled());
+        validateTargetUrl(normalized.targetUrl());
         String payload = serialize(normalized);
 
         registrationTransaction.executeWithoutResult(status -> {
@@ -128,12 +129,15 @@ public class JobService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "A job with this name and target URL already exists");
         }
+        return jobRepository.save(newJob(request));
+    }
+
+    private void validateTargetUrl(String targetUrl) {
         try {
-            targetUrlPolicy.validate(request.targetUrl());
+            targetUrlPolicy.validate(targetUrl);
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
-        return jobRepository.save(newJob(request));
     }
 
     private Job newJob(JobRegistrationRequest request) {
@@ -157,17 +161,13 @@ public class JobService {
     }
 
     public JobResponse update(UUID id, JobRegistrationRequest request) {
+        validateTargetUrl(request.targetUrl());
         return registrationTransaction.execute(status -> {
             Job job = jobRepository.findByIdForUpdate(id).orElseThrow(() -> new JobNotFoundException(id));
             jobRepository.lockRegistration(request.name(), request.targetUrl());
             if (jobRepository.existsByNameAndTargetUrlAndIdNot(request.name(), request.targetUrl(), id)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "A job with this name and target URL already exists");
-            }
-            try {
-                targetUrlPolicy.validate(request.targetUrl());
-            } catch (IllegalArgumentException e) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
             }
             job.setName(request.name());
             job.setJobType(request.jobType());
