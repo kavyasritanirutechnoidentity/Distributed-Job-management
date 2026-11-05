@@ -193,9 +193,15 @@ public class JobService {
             if (job.getTemporalScheduleId() != null) {
                 try {
                     jobSchedulingService.deleteSchedule(job.getTemporalScheduleId());
-                } catch (Exception e) {
-                    log.warn("Could not delete temporal schedule {} for job {}: {}",
-                            job.getTemporalScheduleId(), id, e.getMessage());
+                } catch (RuntimeException e) {
+                    if (isScheduleNotFound(e)) {
+                        log.info("Temporal schedule {} for job {} was already deleted",
+                                job.getTemporalScheduleId(), id);
+                    } else {
+                        // Abort: leave the job in place so the deletion can be retried
+                        // instead of orphaning a schedule that keeps executing.
+                        throw e;
+                    }
                 }
             }
             registrationRepository.deleteByJobId(id);
@@ -291,6 +297,16 @@ public class JobService {
                         .reversed())
                 .map(JobService::toExecutionResponse)
                 .toList();
+    }
+
+    private static boolean isScheduleNotFound(RuntimeException e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof io.grpc.StatusRuntimeException sre
+                    && sre.getStatus().getCode() == io.grpc.Status.Code.NOT_FOUND) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static JobExecutionResponse toExecutionResponse(WorkflowExecutionInfo info) {

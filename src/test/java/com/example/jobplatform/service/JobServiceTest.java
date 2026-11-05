@@ -10,6 +10,7 @@ import com.example.jobplatform.entity.ScheduleStatus;
 import com.example.jobplatform.repository.JobRegistrationRepository;
 import com.example.jobplatform.repository.JobRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.mockito.InOrder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -274,5 +275,55 @@ class JobServiceTest {
             assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
         }
         verifyNoInteractions(registrations, jobs, scheduling, transactions);
+    }
+
+    private JobResponse registerJob() {
+        return service.register(UUID.randomUUID().toString(), request);
+    }
+
+    @Test
+    void deleteRemovesScheduleThenJob() {
+        JobResponse job = registerJob();
+
+        service.delete(job.id());
+
+        InOrder inOrder = inOrder(scheduling, jobs);
+        inOrder.verify(scheduling).deleteSchedule("job-" + job.id());
+        inOrder.verify(jobs).delete(argThat((Job j) -> j.getId().equals(job.id())));
+        verify(registrations).deleteByJobId(job.id());
+    }
+
+    @Test
+    void deleteProceedsWhenScheduleAlreadyMissing() {
+        JobResponse job = registerJob();
+        doThrow(new io.grpc.StatusRuntimeException(io.grpc.Status.NOT_FOUND))
+                .when(scheduling).deleteSchedule(anyString());
+
+        service.delete(job.id());
+
+        verify(jobs).delete(argThat((Job j) -> j.getId().equals(job.id())));
+    }
+
+    @Test
+    void deleteAbortsWhenTemporalDeletionFails() {
+        JobResponse job = registerJob();
+        doThrow(new io.grpc.StatusRuntimeException(io.grpc.Status.UNAVAILABLE))
+                .when(scheduling).deleteSchedule(anyString());
+
+        assertThrows(io.grpc.StatusRuntimeException.class, () -> service.delete(job.id()));
+
+        verify(jobs, never()).delete(any(Job.class));
+        verify(registrations, never()).deleteByJobId(any());
+        verify(transactions, atLeastOnce()).rollback(any());
+    }
+
+    @Test
+    void deletePropagatesDatabaseFailureAfterScheduleDeletion() {
+        JobResponse job = registerJob();
+        doThrow(new org.springframework.dao.DataIntegrityViolationException("db gone"))
+                .when(jobs).delete(any(Job.class));
+
+        assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                () -> service.delete(job.id()));
     }
 }
