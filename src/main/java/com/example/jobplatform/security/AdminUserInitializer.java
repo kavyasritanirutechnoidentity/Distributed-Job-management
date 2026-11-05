@@ -36,6 +36,10 @@ public class AdminUserInitializer implements ApplicationRunner {
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
+        if ("admin123".equals(adminPassword)) {
+            log.warn("The default admin password is in use. Set ADMIN_PASSWORD to a strong password "
+                    + "before exposing this service.");
+        }
         if (users.findByUsername(adminUsername).isPresent()) {
             return;
         }
