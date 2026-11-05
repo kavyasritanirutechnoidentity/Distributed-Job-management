@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowUpDown, ChevronLeft, ChevronRight, ListChecks, Search } from "lucide-react";
 import { useJobs } from "@/hooks/useJobs";
 import { Input, Select } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState, ErrorState } from "@/components/QueryState";
+import { EmptyState, ErrorState, StaleDataWarning } from "@/components/QueryState";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
@@ -18,7 +18,6 @@ type StatusFilter = "ALL" | ScheduleStatus;
 type EnabledFilter = "ALL" | "ENABLED" | "DISABLED";
 
 export function JobsPage() {
-  const { data: jobs, isPending, isError, error, refetch } = useJobs();
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
@@ -27,42 +26,26 @@ export function JobsPage() {
   const [sortAsc, setSortAsc] = useState(false);
   const [page, setPage] = useState(0);
 
-  const filtered = useMemo(() => {
-    if (!jobs) return [];
-    const q = search.trim().toLowerCase();
-    const result = jobs.filter((j) => {
-      if (statusFilter !== "ALL" && j.scheduleStatus !== statusFilter) return false;
-      if (enabledFilter === "ENABLED" && !j.enabled) return false;
-      if (enabledFilter === "DISABLED" && j.enabled) return false;
-      if (q && !j.name.toLowerCase().includes(q) && !j.targetUrl.toLowerCase().includes(q))
-        return false;
-      return true;
-    });
-    result.sort((a, b) => {
-      let cmp: number;
-      switch (sortKey) {
-        case "name":
-          cmp = a.name.localeCompare(b.name);
-          break;
-        case "intervalSeconds":
-          cmp = a.intervalSeconds - b.intervalSeconds;
-          break;
-        case "scheduleStatus":
-          cmp = a.scheduleStatus.localeCompare(b.scheduleStatus);
-          break;
-        default:
-          cmp = a.createdAt.localeCompare(b.createdAt);
-      }
-      return sortAsc ? cmp : -cmp;
-    });
-    return result;
-  }, [jobs, search, statusFilter, enabledFilter, sortKey, sortAsc]);
-
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, pageCount - 1);
-  const pageRows = filtered.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE);
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => {
+    const timer = setTimeout(() => { setDebouncedSearch(search); setPage(0); }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+  const { data: jobs, isPending, isError, error, refetch } = useJobs({
+    page, size: PAGE_SIZE, search: debouncedSearch,
+    status: statusFilter === "ALL" ? undefined : statusFilter,
+    enabled: enabledFilter === "ALL" ? undefined : enabledFilter === "ENABLED",
+    sort: sortKey, direction: sortAsc ? "asc" : "desc",
+  });
+  const pageCount = Math.max(1, jobs?.totalPages ?? 1);
+  const safePage = page;
+  const pageRows = jobs?.content ?? [];
+  useEffect(() => {
+    if (jobs && page >= pageCount) setPage(pageCount - 1);
+  }, [jobs, page, pageCount]);
 
   function toggleSort(key: SortKey) {
+    setPage(0);
     if (key === sortKey) setSortAsc((v) => !v);
     else {
       setSortKey(key);
@@ -89,7 +72,7 @@ export function JobsPage() {
         <div>
           <h1 className="glow-text text-2xl font-semibold tracking-tight">Jobs</h1>
           <p className="text-sm text-muted-foreground">
-            {jobs ? `${filtered.length} of ${jobs.length} jobs` : "Registered jobs"}
+            {jobs ? `${jobs.totalElements} matching jobs` : "Registered jobs"}
           </p>
         </div>
         <Link to="/jobs/new" className={buttonVariants()}>
@@ -143,20 +126,21 @@ export function JobsPage() {
         </Select>
       </div>
 
+      {isError && jobs && <StaleDataWarning error={error} onRetry={() => refetch()} />}
       {isPending ? (
         <div className="space-y-2">
           {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-12" />
           ))}
         </div>
-      ) : isError ? (
+      ) : isError && !jobs ? (
         <ErrorState error={error} onRetry={() => refetch()} />
       ) : pageRows.length === 0 ? (
         <EmptyState
           icon={<ListChecks className="h-10 w-10 text-muted-foreground" aria-hidden />}
-          title={jobs.length === 0 ? "No jobs registered" : "No jobs match your filters"}
+          title={!search && statusFilter === "ALL" && enabledFilter === "ALL" ? "No jobs registered" : "No jobs match your filters"}
           description={
-            jobs.length === 0
+            !search && statusFilter === "ALL" && enabledFilter === "ALL"
               ? "Register your first health-check job."
               : "Try adjusting the search or filters."
           }

@@ -22,6 +22,10 @@ public class Job {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @jakarta.persistence.Version
+    @Column(nullable = false)
+    private long version;
+
     @Column(nullable = false)
     private String name;
 

@@ -1,19 +1,26 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
-import { getJob, getJobs, registerJob, scheduleJob } from "@/lib/api";
-import { jobSchema, type JobRegistrationValues } from "@/lib/schemas";
-
-const jobListSchema = z.array(jobSchema);
+import { getDashboard, getJob, getJobExecutions, getJobs, registerJob, scheduleJob, type JobListParams } from "@/lib/api";
+import { dashboardSchema, jobPageSchema, jobExecutionSchema, jobSchema, type JobRegistrationValues } from "@/lib/schemas";
 
 export const jobKeys = {
   all: ["jobs"] as const,
   detail: (id: string) => ["jobs", id] as const,
+  executions: (id: string) => ["jobs", id, "executions"] as const,
 };
 
-export function useJobs() {
+export function useDashboard() {
   return useQuery({
-    queryKey: jobKeys.all,
-    queryFn: async () => jobListSchema.parse(await getJobs()),
+    queryKey: [...jobKeys.all, "dashboard"],
+    queryFn: async () => dashboardSchema.parse(await getDashboard()),
+    refetchInterval: 15_000,
+  });
+}
+
+export function useJobs(params: JobListParams = {}) {
+  return useQuery({
+    queryKey: [...jobKeys.all, "list", params],
+    queryFn: async () => jobPageSchema.parse(await getJobs(params)),
     refetchInterval: 15_000,
   });
 }
@@ -22,6 +29,14 @@ export function useJob(id: string) {
   return useQuery({
     queryKey: jobKeys.detail(id),
     queryFn: async () => jobSchema.parse(await getJob(id)),
+    refetchInterval: 10_000,
+  });
+}
+
+export function useJobExecutions(id: string) {
+  return useQuery({
+    queryKey: jobKeys.executions(id),
+    queryFn: async () => z.array(jobExecutionSchema).parse(await getJobExecutions(id)),
     refetchInterval: 10_000,
   });
 }

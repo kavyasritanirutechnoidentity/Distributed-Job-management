@@ -18,4 +18,5 @@ temporal:
   task-queue: ${TEMPORAL_TASK_QUEUE:job-platform-task-queue}
 
 server:
+  address: 127.0.0.1
   port: 8080

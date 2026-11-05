@@ -2,6 +2,8 @@ package com.example.jobplatform.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.example.jobplatform.config.TemporalProperties;
+import com.example.jobplatform.dto.JobExecutionResponse;
 import com.example.jobplatform.entity.JobRegistration;
 import com.example.jobplatform.repository.JobRegistrationRepository;
 import com.example.jobplatform.dto.JobRegistrationRequest;
@@ -18,7 +20,13 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
+import io.temporal.api.workflow.v1.WorkflowExecutionInfo;
+import io.temporal.api.workflowservice.v1.ListWorkflowExecutionsRequest;
+import io.temporal.api.workflowservice.v1.ListWorkflowExecutionsResponse;
+import io.temporal.serviceclient.WorkflowServiceStubs;
 
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,14 +41,22 @@ public class JobService {
     private final JobRegistrationRepository registrationRepository;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate registrationTransaction;
+    private final WorkflowServiceStubs serviceStubs;
+    private final TemporalProperties temporalProperties;
+    private final TargetUrlPolicy targetUrlPolicy;
 
     public JobService(JobRepository jobRepository, JobSchedulingService jobSchedulingService,
                       JobRegistrationRepository registrationRepository, ObjectMapper objectMapper,
-                      PlatformTransactionManager transactionManager) {
+                      PlatformTransactionManager transactionManager,
+                      WorkflowServiceStubs serviceStubs, TemporalProperties temporalProperties,
+                      TargetUrlPolicy targetUrlPolicy) {
         this.jobRepository = jobRepository;
         this.jobSchedulingService = jobSchedulingService;
         this.registrationRepository = registrationRepository;
         this.objectMapper = objectMapper;
+        this.serviceStubs = serviceStubs;
+        this.temporalProperties = temporalProperties;
+        this.targetUrlPolicy = targetUrlPolicy;
         this.registrationTransaction = new TransactionTemplate(transactionManager);
         this.registrationTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.registrationTransaction.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
@@ -64,7 +80,7 @@ public class JobService {
                         "Idempotency-Key has already been used with a different request");
             }
             if (registration.getJobId() == null) {
-                Job job = jobRepository.save(newJob(normalized));
+                Job job = saveNewJob(normalized);
                 registration.setJobId(job.getId());
                 registrationRepository.save(registration);
             }
@@ -76,7 +92,7 @@ public class JobService {
                 return deserializeResponse(registration.getResponsePayload());
             }
             UUID jobId = registration.getJobId();
-            Job job = jobRepository.findById(jobId).orElseThrow(() -> new JobNotFoundException(jobId));
+            Job job = jobRepository.findByIdForUpdate(jobId).orElseThrow(() -> new JobNotFoundException(jobId));
             job = trySchedule(job);
             jobRepository.flush();
             JobResponse response = JobResponse.from(job);
@@ -103,8 +119,21 @@ public class JobService {
     }
 
     public JobResponse register(JobRegistrationRequest request) {
-        Job job = jobRepository.save(newJob(request));
-        return JobResponse.from(trySchedule(job));
+        return register(UUID.randomUUID().toString(), request);
+    }
+
+    private Job saveNewJob(JobRegistrationRequest request) {
+        jobRepository.lockRegistration(request.name(), request.targetUrl());
+        if (jobRepository.existsByNameAndTargetUrl(request.name(), request.targetUrl())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "A job with this name and target URL already exists");
+        }
+        try {
+            targetUrlPolicy.validate(request.targetUrl());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+        return jobRepository.save(newJob(request));
     }
 
     private Job newJob(JobRegistrationRequest request) {
@@ -119,8 +148,12 @@ public class JobService {
     }
 
     public JobResponse schedule(UUID id) {
-        Job job = jobRepository.findById(id).orElseThrow(() -> new JobNotFoundException(id));
-        return JobResponse.from(trySchedule(job));
+        return registrationTransaction.execute(status -> {
+            Job job = jobRepository.findByIdForUpdate(id).orElseThrow(() -> new JobNotFoundException(id));
+            job = trySchedule(job);
+            jobRepository.flush();
+            return JobResponse.from(job);
+        });
     }
 
     private Job trySchedule(Job job) {
@@ -137,13 +170,91 @@ public class JobService {
         return jobRepository.save(job);
     }
 
-    public List<JobResponse> findAll() {
-        return jobRepository.findAll().stream().map(JobResponse::from).toList();
+    public com.example.jobplatform.dto.JobPageResponse findAll(int page, int size, String search,
+            ScheduleStatus scheduleStatus, Boolean enabled, String sort, String direction) {
+        if (page < 0 || size < 1 || size > 100 || search.length() > 255
+                || !List.of("name", "createdAt", "updatedAt", "intervalSeconds", "scheduleStatus").contains(sort)
+                || !List.of("asc", "desc").contains(direction)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid pagination, search or sorting parameters");
+        }
+        org.springframework.data.jpa.domain.Specification<Job> spec = (root, query, cb) -> {
+            var predicates = new java.util.ArrayList<jakarta.persistence.criteria.Predicate>();
+            if (!search.isBlank()) {
+                String pattern = "%" + search.trim().toLowerCase(java.util.Locale.ROOT)
+                        .replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+                predicates.add(cb.or(cb.like(cb.lower(root.get("name")), pattern, '\\'),
+                        cb.like(cb.lower(root.get("targetUrl")), pattern, '\\')));
+            }
+            if (scheduleStatus != null) predicates.add(cb.equal(root.get("scheduleStatus"), scheduleStatus));
+            if (enabled != null) predicates.add(cb.equal(root.get("enabled"), enabled));
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+        var order = org.springframework.data.domain.Sort.by(
+                org.springframework.data.domain.Sort.Direction.fromString(direction), sort).and(
+                org.springframework.data.domain.Sort.by("id"));
+        var result = jobRepository.findAll(spec, org.springframework.data.domain.PageRequest.of(page, size, order));
+        return new com.example.jobplatform.dto.JobPageResponse(result.getContent().stream()
+                .map(JobResponse::from).toList(), result.getTotalElements(), result.getTotalPages(), result.getNumber());
+    }
+
+    public com.example.jobplatform.dto.JobDashboardResponse dashboard() {
+        return new com.example.jobplatform.dto.JobDashboardResponse(jobRepository.count(),
+                jobRepository.countByScheduleStatus(ScheduleStatus.SCHEDULED),
+                jobRepository.countByScheduleStatus(ScheduleStatus.PENDING),
+                jobRepository.countByScheduleStatus(ScheduleStatus.FAILED), jobRepository.countByEnabledTrue(),
+                countFailedRunsLast24h(),
+                findAll(0, 6, "", null, null, "updatedAt", "desc").content(),
+                findAll(0, 5, "", ScheduleStatus.FAILED, null, "updatedAt", "desc").content());
+    }
+
+    private Long countFailedRunsLast24h() {
+        try {
+            String since = Instant.now().minusSeconds(86_400).toString();
+            return serviceStubs.blockingStub().countWorkflowExecutions(
+                    io.temporal.api.workflowservice.v1.CountWorkflowExecutionsRequest.newBuilder()
+                            .setNamespace(temporalProperties.namespace())
+                            .setQuery("WorkflowId STARTS_WITH 'health-check-' AND ExecutionStatus = 'Failed'"
+                                    + " AND StartTime > \"" + since + "\"")
+                            .build()).getCount();
+        } catch (RuntimeException e) {
+            log.warn("Could not count failed executions in Temporal: {}", e.getMessage());
+            return null;
+        }
     }
 
     public JobResponse findById(UUID id) {
         return jobRepository.findById(id)
                 .map(JobResponse::from)
                 .orElseThrow(() -> new JobNotFoundException(id));
+    }
+
+    public List<JobExecutionResponse> findExecutions(UUID id) {
+        if (!jobRepository.existsById(id)) {
+            throw new JobNotFoundException(id);
+        }
+        ListWorkflowExecutionsResponse response = serviceStubs.blockingStub()
+                .listWorkflowExecutions(ListWorkflowExecutionsRequest.newBuilder()
+                        .setNamespace(temporalProperties.namespace())
+                        .setPageSize(15)
+                        .setQuery("WorkflowId STARTS_WITH 'health-check-" + id + "'")
+                        .build());
+        return response.getExecutionsList().stream()
+                .sorted(Comparator.comparing((WorkflowExecutionInfo e) -> e.getStartTime().getSeconds())
+                        .reversed())
+                .map(JobService::toExecutionResponse)
+                .toList();
+    }
+
+    private static JobExecutionResponse toExecutionResponse(WorkflowExecutionInfo info) {
+        Instant start = Instant.ofEpochSecond(
+                info.getStartTime().getSeconds(), info.getStartTime().getNanos());
+        Instant close = info.hasCloseTime()
+                ? Instant.ofEpochSecond(info.getCloseTime().getSeconds(), info.getCloseTime().getNanos())
+                : null;
+        Long durationMs = close == null ? null : close.toEpochMilli() - start.toEpochMilli();
+        return new JobExecutionResponse(
+                info.getExecution().getWorkflowId(),
+                info.getStatus().name().replace("WORKFLOW_EXECUTION_STATUS_", ""),
+                start, close, durationMs);
     }
 }

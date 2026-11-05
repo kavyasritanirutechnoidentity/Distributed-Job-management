@@ -4,6 +4,7 @@ import com.example.jobplatform.dto.JobRegistrationRequest;
 import com.example.jobplatform.dto.JobResponse;
 import com.example.jobplatform.entity.Job;
 import com.example.jobplatform.entity.JobRegistration;
+import com.example.jobplatform.config.TemporalProperties;
 import com.example.jobplatform.entity.JobType;
 import com.example.jobplatform.entity.ScheduleStatus;
 import com.example.jobplatform.repository.JobRegistrationRepository;
@@ -17,6 +18,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.web.server.ResponseStatusException;
+import io.temporal.serviceclient.WorkflowServiceStubs;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -68,12 +70,17 @@ class JobServiceTest {
             storedJobs.put(job.getId(), job);
             return job;
         });
-        when(jobs.findById(any())).thenAnswer(invocation ->
+        when(jobs.existsByNameAndTargetUrl(anyString(), anyString())).thenAnswer(invocation ->
+                storedJobs.values().stream().anyMatch(job -> job.getName().equals(invocation.getArgument(0))
+                        && job.getTargetUrl().equals(invocation.getArgument(1))));
+        when(jobs.findByIdForUpdate(any())).thenAnswer(invocation ->
                 Optional.ofNullable(storedJobs.get(invocation.getArgument(0))));
         doAnswer(invocation -> "job-" + ((Job) invocation.getArgument(0)).getId())
                 .when(scheduling).createSchedule(any());
         service = new JobService(jobs, scheduling, registrations,
-                new ObjectMapper().findAndRegisterModules(), transactions);
+                new ObjectMapper().findAndRegisterModules(), transactions,
+                mock(WorkflowServiceStubs.class),
+                new TemporalProperties("localhost:7233", "default", "test-queue"), mock(TargetUrlPolicy.class));
     }
 
     @Test
@@ -113,13 +120,38 @@ class JobServiceTest {
     }
 
     @Test
-    void permitsDifferentKeysWithSamePayload() {
-        JobResponse first = service.register("first", request);
-        JobResponse second = service.register("second", request);
+    void rejectsDifferentKeysWithSameNameAndTarget() {
+        service.register("first", request);
+        JobRegistrationRequest changedInterval = new JobRegistrationRequest(
+                request.name(), request.jobType(), request.targetUrl(), 60L, false);
 
-        assertNotEquals(first.id(), second.id());
-        assertEquals(2, storedJobs.size());
-        verify(scheduling, times(2)).createSchedule(any());
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.register("second", changedInterval));
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        assertEquals("A job with this name and target URL already exists", exception.getReason());
+        assertEquals(1, storedJobs.size());
+        verify(scheduling, times(1)).createSchedule(any());
+    }
+
+    @Test
+    void permitsSameTargetWithDifferentNameAndSameNameWithDifferentTarget() {
+        service.register("first", request);
+        service.register("second", new JobRegistrationRequest(
+                "another", request.jobType(), request.targetUrl(), 10L, true));
+        service.register("third", new JobRegistrationRequest(
+                request.name(), request.jobType(), "http://localhost:8080/other", 10L, true));
+
+        assertEquals(3, storedJobs.size());
+    }
+
+    @Test
+    void rejectsDuplicatesWithoutIdempotencyKey() {
+        service.register(request);
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
+                () -> service.register(request));
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        assertEquals(1, storedJobs.size());
     }
 
     @Test
@@ -141,6 +173,66 @@ class JobServiceTest {
         assertEquals(failed, service.register("first", request));
         assertEquals(1, storedJobs.size());
         verify(scheduling, times(1)).createSchedule(any());
+    }
+
+    @Test
+    void returnsRequestedPageWithStableSortAndTotals() {
+        JobResponse registered = service.register("first", request);
+        var pageable = org.springframework.data.domain.PageRequest.of(2, 10,
+                org.springframework.data.domain.Sort.by(org.springframework.data.domain.Sort.Direction.DESC, "createdAt")
+                        .and(org.springframework.data.domain.Sort.by("id")));
+        when(jobs.findAll(any(org.springframework.data.jpa.domain.Specification.class), eq(pageable)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(
+                        java.util.List.of(storedJobs.get(registered.id())), pageable, 21));
+
+        var response = service.findAll(2, 10, "health", ScheduleStatus.SCHEDULED, true, "createdAt", "desc");
+
+        assertEquals(21, response.totalElements());
+        assertEquals(3, response.totalPages());
+        assertEquals(2, response.number());
+        assertEquals(registered, response.content().getFirst());
+    }
+
+    @Test
+    void rejectsUnboundedPagesAndUnknownSorts() {
+        assertThrows(ResponseStatusException.class,
+                () -> service.findAll(0, 101, "", null, null, "createdAt", "desc"));
+        assertThrows(ResponseStatusException.class,
+                () -> service.findAll(-1, 25, "", null, null, "createdAt", "desc"));
+        assertThrows(ResponseStatusException.class,
+                () -> service.findAll(0, 25, "", null, null, "targetUrl", "desc"));
+        verifyNoInteractions(jobs);
+    }
+
+    @Test
+    void dashboardUsesAggregateCountsAndBoundedQueries() {
+        when(jobs.count()).thenReturn(5000L);
+        when(jobs.countByScheduleStatus(ScheduleStatus.SCHEDULED)).thenReturn(4900L);
+        when(jobs.countByScheduleStatus(ScheduleStatus.PENDING)).thenReturn(80L);
+        when(jobs.countByScheduleStatus(ScheduleStatus.FAILED)).thenReturn(20L);
+        when(jobs.countByEnabledTrue()).thenReturn(4500L);
+        when(jobs.findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        var dashboard = service.dashboard();
+
+        assertEquals(5000L, dashboard.total());
+        assertEquals(4900L, dashboard.scheduled());
+        assertEquals(80L, dashboard.pending());
+        assertEquals(20L, dashboard.failed());
+        assertEquals(4500L, dashboard.enabled());
+        verify(jobs, never()).findAll();
+        verify(jobs).findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                argThat((org.springframework.data.domain.Pageable p) -> p.getPageSize() == 6));
+        verify(jobs).findAll(any(org.springframework.data.jpa.domain.Specification.class),
+                argThat((org.springframework.data.domain.Pageable p) -> p.getPageSize() == 5));
+    }
+
+    @Test
+    void locksOnlyTheRegistrationIdentity() {
+        service.register("first", request);
+        verify(jobs).lockRegistration(request.name(), request.targetUrl());
     }
 
     @Test

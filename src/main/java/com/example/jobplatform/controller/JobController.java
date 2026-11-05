@@ -1,5 +1,6 @@
 package com.example.jobplatform.controller;
 
+import com.example.jobplatform.dto.JobExecutionResponse;
 import com.example.jobplatform.dto.JobRegistrationRequest;
 import com.example.jobplatform.dto.JobResponse;
 import com.example.jobplatform.service.JobService;
@@ -28,8 +29,10 @@ public class JobController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public JobResponse register(@Valid @RequestBody JobRegistrationRequest request) {
-        return jobService.register(request);
+    public JobResponse register(
+            @org.springframework.web.bind.annotation.RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody JobRegistrationRequest request) {
+        return jobService.register(idempotencyKey, request);
     }
 
     @PostMapping("/{id}/schedule")
@@ -38,12 +41,29 @@ public class JobController {
     }
 
     @GetMapping
-    public List<JobResponse> findAll() {
-        return jobService.findAll();
+    public com.example.jobplatform.dto.JobPageResponse findAll(
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "0") int page,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "25") int size,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "") String search,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) com.example.jobplatform.entity.ScheduleStatus status,
+            @org.springframework.web.bind.annotation.RequestParam(required = false) Boolean enabled,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "createdAt") String sort,
+            @org.springframework.web.bind.annotation.RequestParam(defaultValue = "desc") String direction) {
+        return jobService.findAll(page, size, search, status, enabled, sort, direction);
+    }
+
+    @GetMapping("/dashboard")
+    public com.example.jobplatform.dto.JobDashboardResponse dashboard() {
+        return jobService.dashboard();
     }
 
     @GetMapping("/{id}")
     public JobResponse findById(@PathVariable UUID id) {
         return jobService.findById(id);
+    }
+
+    @GetMapping("/{id}/executions")
+    public List<JobExecutionResponse> findExecutions(@PathVariable UUID id) {
+        return jobService.findExecutions(id);
     }
 }

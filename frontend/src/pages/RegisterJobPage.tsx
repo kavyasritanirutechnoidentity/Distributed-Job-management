@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
 import { useRegisterJob } from "@/hooks/useJobs";
-import { ApiError } from "@/lib/api";
+import { ApiError, errorMessage } from "@/lib/api";
 import {
   jobRegistrationSchema,
   type Job,
@@ -26,12 +26,28 @@ function FieldError({ message, id }: { message?: string; id: string }) {
   );
 }
 
+const PENDING_REGISTRATION = "job-platform.pending-registration";
+type PendingRegistration = { key: string; values: JobRegistrationValues };
+
+function restoreRegistration(): PendingRegistration | null {
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(PENDING_REGISTRATION) ?? "null");
+    if (!stored || typeof stored.key !== "string") return null;
+    const values = jobRegistrationSchema.safeParse(stored.values);
+    return values.success ? { key: stored.key, values: values.data } : null;
+  } catch {
+    return null;
+  }
+}
+
 export function RegisterJobPage() {
   const navigate = useNavigate();
   const registerJob = useRegisterJob();
   // One key per logical submission: regenerated only after success or when the
   // form is reset — never per retry.
-  const idempotencyKey = useRef(crypto.randomUUID());
+  const [restored] = useState(restoreRegistration);
+  const pending = useRef<PendingRegistration | null>(restored);
+  const idempotencyKey = useRef(restored?.key ?? crypto.randomUUID());
   const [created, setCreated] = useState<Job | null>(null);
 
   const {
@@ -42,26 +58,45 @@ export function RegisterJobPage() {
     formState: { errors, isSubmitting },
   } = useForm<JobRegistrationInput, unknown, JobRegistrationValues>({
     resolver: zodResolver(jobRegistrationSchema),
-    defaultValues: { jobType: "HEALTH_CHECK", enabled: true, intervalSeconds: 60 },
+    defaultValues: restored?.values ?? { jobType: "HEALTH_CHECK", enabled: true, intervalSeconds: 60 },
   });
 
   async function onSubmit(values: JobRegistrationValues) {
+    if (pending.current && JSON.stringify(pending.current.values) !== JSON.stringify(values)) {
+      setError("root", { message: "The previous request has an unknown outcome. Restore its original values and retry before starting a different registration." });
+      return;
+    }
+    pending.current = { key: idempotencyKey.current, values };
+    try {
+      sessionStorage.setItem(PENDING_REGISTRATION, JSON.stringify(pending.current));
+    } catch {
+      setError("root", { message: "Browser storage is unavailable. Enable session storage to safely retry registration after a reload." });
+      pending.current = null;
+      return;
+    }
     try {
       const job = await registerJob.mutateAsync({
         values,
         idempotencyKey: idempotencyKey.current,
       });
       setCreated(job);
+      sessionStorage.removeItem(PENDING_REGISTRATION);
+      pending.current = null;
     } catch (e) {
+      if (e instanceof ApiError && [400, 409, 422].includes(e.status)) {
+        sessionStorage.removeItem(PENDING_REGISTRATION);
+        pending.current = null;
+        idempotencyKey.current = crypto.randomUUID();
+      }
       if (e instanceof ApiError && e.fieldErrors) {
         for (const [field, message] of Object.entries(e.fieldErrors)) {
           if (field in values) {
             setError(field as keyof JobRegistrationValues, { type: "server", message });
           }
         }
-        if (Object.keys(e.fieldErrors).length === 0) throw e;
+        if (Object.keys(e.fieldErrors).length === 0) setError("root", { message: errorMessage(e) });
       } else {
-        throw e;
+        setError("root", { message: errorMessage(e) });
       }
     }
   }
@@ -173,6 +208,9 @@ export function RegisterJobPage() {
                 aria-describedby="targetUrl-error"
                 {...register("targetUrl")}
               />
+              <p className="text-xs text-muted-foreground">
+                Public HTTP(S) endpoints only. Local/private addresses and redirects are not supported.
+              </p>
               <FieldError id="targetUrl-error" message={errors.targetUrl?.message} />
             </div>
 
@@ -208,12 +246,18 @@ export function RegisterJobPage() {
               </Label>
             </div>
 
-            {serverError && (
+            <FieldError id="registration-error" message={errors.root?.message} />
+            {pending.current && errors.root && (
+              <Button type="button" variant="outline" onClick={() => reset(pending.current!.values)}>
+                Restore original request
+              </Button>
+            )}
+            {serverError && !errors.root && (
               <div
                 role="alert"
                 className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
               >
-                {serverError.message}
+                {errorMessage(serverError)}
               </div>
             )}
 

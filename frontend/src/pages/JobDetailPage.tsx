@@ -1,17 +1,100 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Copy, Info, RefreshCw } from "lucide-react";
-import { useJob, useScheduleJob } from "@/hooks/useJobs";
+import { ArrowLeft, Copy, ExternalLink, Info, RefreshCw } from "lucide-react";
+import { useJob, useJobExecutions, useScheduleJob } from "@/hooks/useJobs";
 import { ApiError } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState, ErrorState } from "@/components/QueryState";
+import { EmptyState, ErrorState, StaleDataWarning } from "@/components/QueryState";
 import { StatusBadge } from "@/components/StatusBadge";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { formatDateTime, formatInterval } from "@/lib/utils";
+import { formatDateTime, formatInterval, formatRelative } from "@/lib/utils";
+
+const TEMPORAL_UI =
+  import.meta.env.VITE_TEMPORAL_UI_URL ?? "http://localhost:8233";
+const temporalNs = "default";
+
+function executionStatusVariant(status: string): "success" | "destructive" | "info" {
+  if (status === "COMPLETED") return "success";
+  if (status === "RUNNING") return "info";
+  return "destructive";
+}
+
+function ExecutionsCard({ jobId }: { jobId: string }) {
+  const { data, isPending, isError, error, refetch } = useJobExecutions(jobId);
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between">
+        <CardTitle>Recent executions</CardTitle>
+        <a
+          href={`${TEMPORAL_UI}/namespaces/${temporalNs}/schedules`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-primary"
+        >
+          Full history in Temporal UI <ExternalLink className="h-3 w-3" aria-hidden />
+        </a>
+      </CardHeader>
+      <CardContent>
+        {isError && data && <StaleDataWarning error={error} onRetry={() => refetch()} />}
+        {isPending ? (
+          <div className="space-y-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-9" />
+            ))}
+          </div>
+        ) : !data ? (
+          <ErrorState error={error} onRetry={() => refetch()} />
+        ) : data.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted-foreground">
+            No executions yet — the first run happens on the next interval tick.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {data.map((ex) => (
+              <li
+                key={ex.workflowId}
+                className="flex items-center justify-between gap-4 rounded-lg px-2 py-2.5 transition-colors duration-200 hover:bg-[hsl(217_80%_60%/0.05)]"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <Badge variant={executionStatusVariant(ex.status)}>
+                    {ex.status.toLowerCase().replace("_", " ")}
+                  </Badge>
+                  <span className="truncate font-mono text-xs text-muted-foreground">
+                    {ex.workflowId.replace(/^health-check-[0-9a-f-]+-/, "")}
+                  </span>
+                </div>
+                <div className="flex shrink-0 items-center gap-4 text-xs text-muted-foreground">
+                  {ex.durationMs != null && (
+                    <span className="tabular-nums">
+                      {ex.durationMs < 1000
+                        ? `${ex.durationMs}ms`
+                        : `${(ex.durationMs / 1000).toFixed(1)}s`}
+                    </span>
+                  )}
+                  <span>{formatRelative(ex.startTime)}</span>
+                  <a
+                    href={`${TEMPORAL_UI}/namespaces/${temporalNs}/workflows/${ex.workflowId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-muted-foreground transition-colors hover:text-primary"
+                    aria-label="Open workflow in Temporal UI"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
@@ -39,7 +122,7 @@ export function JobDetailPage() {
     );
   }
 
-  if (isError) {
+  if (!job) {
     if (error instanceof ApiError && error.status === 404) {
       return (
         <EmptyState
@@ -79,6 +162,7 @@ export function JobDetailPage() {
         <ArrowLeft className="h-4 w-4" aria-hidden /> Back to jobs
       </Link>
 
+      {isError && <StaleDataWarning error={error} onRetry={() => refetch()} />}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
@@ -155,11 +239,20 @@ export function JobDetailPage() {
                       </span>
                       <button
                         onClick={copyScheduleId}
-                        className="shrink-0 text-muted-foreground hover:text-foreground"
+                        className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
                         aria-label="Copy schedule ID"
                       >
                         <Copy className="h-3.5 w-3.5" />
                       </button>
+                      <a
+                        href={`${TEMPORAL_UI}/namespaces/${temporalNs}/schedules/${job.temporalScheduleId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="shrink-0 text-muted-foreground transition-colors hover:text-primary"
+                        aria-label="Open schedule in Temporal UI"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
                       {copied && <span className="text-xs text-success">Copied</span>}
                     </>
                   ) : (
@@ -174,13 +267,14 @@ export function JobDetailPage() {
         </Card>
       </div>
 
+      <ExecutionsCard jobId={job.id} />
+
       <div className="flex gap-3 rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
         <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
         <p>
           <span className="font-medium text-foreground">SCHEDULED</span> means the Temporal
-          schedule was created — it does not report whether individual executions succeed.
-          The API does not expose per-run execution results yet; check the Temporal UI
-          (localhost:8233) for workflow history.
+          schedule exists and fires on its interval — check the execution list above for
+          whether individual runs actually succeeded.
         </p>
       </div>
 

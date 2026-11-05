@@ -19,6 +19,9 @@ public class TemporalConfig {
         return WorkflowServiceStubs.newServiceStubs(
                 WorkflowServiceStubsOptions.newBuilder()
                         .setTarget(properties.serviceTarget())
+                        .setRpcTimeout(java.time.Duration.ofSeconds(5))
+                        .setRpcRetryOptions(io.temporal.serviceclient.RpcRetryOptions.newBuilder()
+                                .setMaximumAttempts(2).build())
                         .build());
     }
 

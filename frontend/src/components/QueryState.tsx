@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
-import { ApiError } from "@/lib/api";
+import { errorMessage } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
 export function ErrorState({
@@ -10,12 +10,7 @@ export function ErrorState({
   error: unknown;
   onRetry?: () => void;
 }) {
-  const message =
-    error instanceof ApiError
-      ? error.message
-      : error instanceof Error
-        ? error.message
-        : "Something went wrong";
+  const message = errorMessage(error);
   return (
     <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-10 text-center">
       <AlertTriangle className="h-8 w-8 text-destructive" aria-hidden />
@@ -26,6 +21,15 @@ export function ErrorState({
           Retry
         </Button>
       )}
+    </div>
+  );
+}
+
+export function StaleDataWarning({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  return (
+    <div role="status" className="rounded-lg border border-warning/30 p-3 text-sm text-muted-foreground">
+      Showing previously loaded data. {errorMessage(error)}{" "}
+      <Button variant="outline" size="sm" onClick={onRetry}>Retry</Button>
     </div>
   );
 }

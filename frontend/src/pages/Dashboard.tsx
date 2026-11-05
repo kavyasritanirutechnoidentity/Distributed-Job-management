@@ -12,14 +12,18 @@ import {
   XCircle,
 } from "lucide-react";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { useJobs } from "@/hooks/useJobs";
+import { useQueries } from "@tanstack/react-query";
+import { z } from "zod";
+import { useDashboard, jobKeys } from "@/hooks/useJobs";
+import { getJobExecutions } from "@/lib/api";
+import { jobExecutionSchema } from "@/lib/schemas";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState, ErrorState } from "@/components/QueryState";
+import { EmptyState, ErrorState, StaleDataWarning } from "@/components/QueryState";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatInterval, formatRelative } from "@/lib/utils";
-import type { Job, ScheduleStatus } from "@/lib/schemas";
+import type { Job, JobExecution, ScheduleStatus } from "@/lib/schemas";
 
 const STATUS_COLORS: Record<ScheduleStatus, string> = {
   SCHEDULED: "hsl(160 84% 45%)",
@@ -50,7 +54,7 @@ function StatCard({
   tone = "neutral",
 }: {
   label: string;
-  value: number;
+  value: number | string;
   icon: typeof Clock;
   tone?: keyof typeof TONE_STYLES;
 }) {
@@ -99,7 +103,23 @@ function FailureRow({ job }: { job: Job }) {
 }
 
 export function Dashboard() {
-  const { data: jobs, isPending, isError, error, refetch } = useJobs();
+  const { data: dashboard, isPending, isError, error, refetch } = useDashboard();
+  const jobs = dashboard?.recent;
+
+  const executionQueries = useQueries({
+    queries: (jobs ?? []).map((j) => ({
+      queryKey: jobKeys.executions(j.id),
+      queryFn: async () => z.array(jobExecutionSchema).parse(await getJobExecutions(j.id)),
+      refetchInterval: 15_000,
+    })),
+  });
+
+  const recentExecutions: (JobExecution & { jobName: string })[] = (jobs ?? [])
+    .flatMap((j, i) =>
+      (executionQueries[i]?.data ?? []).map((ex) => ({ ...ex, jobName: j.name })),
+    )
+    .sort((a, b) => b.startTime.localeCompare(a.startTime))
+    .slice(0, 8);
 
   if (isPending) {
     return (
@@ -115,26 +135,13 @@ export function Dashboard() {
     );
   }
 
-  if (isError) return <ErrorState error={error} onRetry={() => refetch()} />;
+  if (!dashboard) return <ErrorState error={error} onRetry={() => refetch()} />;
 
-  const total = jobs.length;
-  const byStatus = (s: ScheduleStatus) => jobs.filter((j) => j.scheduleStatus === s);
-  const scheduled = byStatus("SCHEDULED").length;
-  const pending = byStatus("PENDING").length;
-  const failed = byStatus("FAILED").length;
-  const enabled = jobs.filter((j) => j.enabled).length;
-
+  const { total, scheduled, pending, failed, enabled, failedRuns24h, recent, failures } = dashboard;
+  const counts = { SCHEDULED: scheduled, PENDING: pending, FAILED: failed };
   const chartData = (["SCHEDULED", "PENDING", "FAILED"] as const)
-    .map((s) => ({ name: s, value: byStatus(s).length }))
+    .map((s) => ({ name: s, value: counts[s] }))
     .filter((d) => d.value > 0);
-
-  const recent = [...jobs]
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .slice(0, 6);
-  const failures = jobs
-    .filter((j) => j.scheduleStatus === "FAILED")
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .slice(0, 5);
 
   return (
     <motion.div
@@ -155,6 +162,7 @@ export function Dashboard() {
         </Link>
       </div>
 
+      {isError && <StaleDataWarning error={error} onRetry={() => refetch()} />}
       {total === 0 ? (
         <EmptyState
           icon={<ListChecks className="h-10 w-10 text-muted-foreground" aria-hidden />}
@@ -168,12 +176,18 @@ export function Dashboard() {
         />
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {[
               { label: "Total jobs", value: total, icon: ListChecks, tone: "neutral" as const },
               { label: "Scheduled", value: scheduled, icon: CheckCircle2, tone: "success" as const },
               { label: "Pending", value: pending, icon: Clock, tone: "warning" as const },
-              { label: "Failed", value: failed, icon: XCircle, tone: "destructive" as const },
+              { label: "Schedule failures", value: failed, icon: AlertTriangle, tone: "destructive" as const },
+              {
+                label: "Failed runs (24h)",
+                value: failedRuns24h ?? "—",
+                icon: XCircle,
+                tone: "destructive" as const,
+              },
             ].map((s, i) => (
               <motion.div
                 key={s.label}
@@ -192,7 +206,7 @@ export function Dashboard() {
                 <CardTitle>Schedule status</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="h-48">
+                <div className="relative h-48">
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
@@ -221,6 +235,10 @@ export function Dashboard() {
                       />
                     </PieChart>
                   </ResponsiveContainer>
+                  <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="glow-text text-3xl font-semibold tabular-nums">{total}</span>
+                    <span className="text-xs text-muted-foreground">jobs</span>
+                  </div>
                 </div>
                 <div className="mt-2 flex items-center justify-center gap-6 text-sm">
                   <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -231,8 +249,7 @@ export function Dashboard() {
                   </span>
                 </div>
                 <p className="mt-4 text-center text-xs text-muted-foreground">
-                  Reflects Temporal schedule creation, not per-run execution results — the
-                  API does not expose execution history.
+                  Schedule registration health — run results are in Failed runs and the feed.
                 </p>
               </CardContent>
             </Card>
@@ -259,6 +276,55 @@ export function Dashboard() {
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Execution feed — six recently updated jobs</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {recentExecutions.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No executions recorded yet — runs appear here as schedules fire.
+                </p>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {recentExecutions.map((ex) => (
+                    <li
+                      key={ex.workflowId}
+                      className="flex items-center justify-between gap-4 rounded-lg px-2 py-2.5 transition-colors duration-200 hover:bg-[hsl(217_80%_60%/0.05)]"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                            ex.status === "COMPLETED"
+                              ? "bg-success"
+                              : ex.status === "RUNNING"
+                                ? "bg-primary"
+                                : "bg-destructive pulse-dot"
+                          }`}
+                          aria-hidden
+                        />
+                        <span className="truncate text-sm">{ex.jobName}</span>
+                        <span className="hidden truncate font-mono text-xs text-muted-foreground sm:inline">
+                          {ex.status.toLowerCase().replace("_", " ")}
+                        </span>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-4 text-xs text-muted-foreground">
+                        {ex.durationMs != null && (
+                          <span className="tabular-nums">
+                            {ex.durationMs < 1000
+                              ? `${ex.durationMs}ms`
+                              : `${(ex.durationMs / 1000).toFixed(1)}s`}
+                          </span>
+                        )}
+                        <span>{formatRelative(ex.startTime)}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader className="flex-row items-center justify-between">

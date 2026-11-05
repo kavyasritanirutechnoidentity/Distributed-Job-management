@@ -18,6 +18,21 @@ export const jobSchema = z.object({
   updatedAt: z.string(),
 });
 
+export const jobPageSchema = z.object({
+  content: z.array(jobSchema),
+  totalElements: z.number(),
+  totalPages: z.number(),
+  number: z.number(),
+});
+
+export const dashboardSchema = z.object({
+  total: z.number(), scheduled: z.number(), pending: z.number(),
+  failed: z.number(), enabled: z.number(), failedRuns24h: z.number().nullable(),
+  recent: z.array(jobSchema), failures: z.array(jobSchema),
+});
+
+export type JobPage = z.infer<typeof jobPageSchema>;
+export type JobDashboard = z.infer<typeof dashboardSchema>;
 export type Job = z.infer<typeof jobSchema>;
 export type JobType = z.infer<typeof jobTypeSchema>;
 export type ScheduleStatus = z.infer<typeof scheduleStatusSchema>;
@@ -47,6 +62,17 @@ export const jobRegistrationSchema = z.object({
 
 export type JobRegistrationInput = z.input<typeof jobRegistrationSchema>;
 export type JobRegistrationValues = z.output<typeof jobRegistrationSchema>;
+
+// Mirrors JobExecutionResponse record on the backend.
+export const jobExecutionSchema = z.object({
+  workflowId: z.string(),
+  status: z.string(),
+  startTime: z.string(),
+  closeTime: z.string().nullable(),
+  durationMs: z.number().nullable(),
+});
+
+export type JobExecution = z.infer<typeof jobExecutionSchema>;
 
 // Backend error shapes from GlobalExceptionHandler.
 export const apiErrorSchema = z.object({
