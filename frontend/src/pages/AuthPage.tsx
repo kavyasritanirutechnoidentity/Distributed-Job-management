@@ -111,7 +111,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
             <div className="space-y-1.5">
               <Label htmlFor="username">Username</Label>
               <Input id="username" autoComplete="username" autoFocus {...field("username")} />
-              <p className="min-h-4 text-xs text-destructive">{errors.username?.message}</p>
+              {errors.username && <p className="text-xs text-destructive">{errors.username.message}</p>}
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password">Password</Label>
@@ -137,7 +137,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
                 </button>
               </div>
               {isLogin ? (
-                <p className="min-h-4 text-xs text-destructive">{errors.password?.message}</p>
+                errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>
               ) : (
                 <ul className="space-y-1 pt-1">
                   {passwordRules.map((rule) => {
@@ -160,16 +160,13 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
                 </ul>
               )}
             </div>
-            <p
-              aria-live="polite"
-              className={`rounded-lg border px-3 py-2 text-xs ${
-                submitError
-                  ? "border-destructive/40 bg-destructive/10 text-destructive"
-                  : "invisible border-transparent"
-              }`}
-            >
-              {submitError ?? "placeholder"}
-            </p>
+            <div aria-live="polite" className={submitError ? undefined : "hidden"}>
+              {submitError && (
+                <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  {submitError}
+                </p>
+              )}
+            </div>
             <Button type="submit" className="w-full" disabled={isSubmitting}>
               {isSubmitting
                 ? isLogin ? "Signing in…" : "Creating account…"
