@@ -107,10 +107,10 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
           </p>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" autoComplete={isLogin ? "on" : "off"} noValidate>
             <div className="space-y-1.5">
               <Label htmlFor="username">Username</Label>
-              <Input id="username" autoComplete="username" autoFocus {...field("username")} />
+              <Input id="username" autoComplete={isLogin ? "username" : "off"} autoFocus {...field("username")} />
               {errors.username && <p className="text-xs text-destructive">{errors.username.message}</p>}
             </div>
             <div className="space-y-1.5">
